@@ -1,0 +1,151 @@
+_format_version: "3.0"
+_transform: true
+
+# =====================
+# CONSUMERS
+# =====================
+consumers:
+  - username: shared-consumer
+    jwt_secrets:
+      - key: shared-key                                # Must match `iss` in JWT
+        secret: your_strong_secret_key_at_least_32_chars_long # Shared signing key
+        algorithm: HS256
+
+# =====================
+# SERVICES
+# =====================
+services:
+  # Your backend API service
+  - name: backend-api
+    url: https://6e00-122-175-23-214.ngrok-free.app  # Use ngrok URL instead of localhost
+    
+  # Your SAML authentication service
+  - name: auth-service
+    url: https://6e00-122-175-23-214.ngrok-free.app  # Use ngrok URL instead of localhost
+
+# =====================
+# ROUTES
+# =====================
+routes:
+  # Route for your backend API
+  - name: api-route
+    service: backend-api
+    paths:
+      - /api
+    strip_path: false
+    
+  # Route for your auth service
+  - name: auth-route
+    service: auth-service
+    paths:
+      - /auth
+      - /token
+      - /logout
+      - /error
+      - /saml2
+      - /login
+    strip_path: false
+
+  # Route for the root path
+  - name: root-route
+    service: backend-api
+    paths:
+      - /
+    strip_path: false
+
+# =====================
+# PLUGINS
+# =====================
+plugins:
+  # JWT Authentication Plugin - applies to backend API
+  - name: jwt
+    service: backend-api
+    config:
+      secret_is_base64: false
+      key_claim_name: iss         # Issuer claim
+      claims_to_verify:
+        - exp                     # Verify expiration
+      cookie_names:
+        - access_token            # Look for token in this cookie
+      run_on_preflight: false     # Don't verify JWT on OPTIONS requests
+  
+  # Token Handler Plugin - extracts token from URL and stores in cookie
+  - name: pre-function
+    tags: ["token-handler"]
+    config:
+      access:
+        - |
+          local token = kong.request.get_query_arg("token")
+          if token then
+            -- Log token found
+            kong.log.notice("Found token in URL, setting cookie")
+            
+            -- Set token as cookie with SameSite=None for cross-origin compatibility
+            kong.response.set_header("Set-Cookie", 
+              "access_token=" .. token .. 
+              "; HttpOnly; Path=/; SameSite=None; Secure; Max-Age=86400"
+            )
+            
+            -- Always redirect to React app
+            local destination = "http://localhost:3000"
+            
+            kong.log.notice("Redirecting to React app: " .. destination)
+            
+            -- Use explicit 302 redirect to React app
+            return kong.response.exit(302, nil, {
+              ["Location"] = destination
+            })
+          end
+  
+  # Auth Redirect Plugin - redirects to auth service if no valid token
+  - name: pre-function
+    service: backend-api
+    route: api-route
+    tags: ["auth-redirect"]
+    config:
+      access:
+        - |
+          -- Only execute if JWT authentication failed AND not a userinfo check from React app
+          if kong.client.get_credential() == nil then
+            local path = kong.request.get_path()
+            
+            -- Skip redirect for initial userinfo calls from React app
+            local referer = kong.request.get_header("Referer")
+            if path == "/api/userinfo" and referer and string.match(referer, "localhost:3000") then
+              return kong.response.exit(401, { authenticated = false })
+            end
+            
+            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. path
+            if kong.request.get_raw_query() then
+              current_url = current_url .. "?" .. kong.request.get_raw_query()
+            end
+            
+            -- Base64 encode the URL to avoid issues with special characters
+            local encoded_url = ngx.encode_base64(current_url)
+            
+            -- Redirect to auth service
+            return kong.response.exit(302, "", {
+              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
+            })
+          end
+  
+  # CORS Plugin - for browser support
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3000"
+        - "http://localhost:8000" 
+        - "https://6e00-122-175-23-214.ngrok-free.app"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      headers:
+        - Authorization
+        - Content-Type
+      credentials: true
+      exposed_headers:
+        - Authorization
+      max_age: 3600
