@@ -11,25 +11,23 @@ const AuthService = {
    */
   async getUserInfo() {
     try {
-      // Check if we already have cached user info
-      const cachedInfo = sessionStorage.getItem('user_info');
-      if (cachedInfo) {
-        return JSON.parse(cachedInfo);
-      }
-      
-      // Call the userinfo endpoint with credentials to send cookies
+      console.log("Fetching user info...");
       const response = await fetch(`${ConfigService.getApiBaseUrl()}/api/userinfo`, {
-        credentials: 'include' // Important: This tells fetch to send cookies
+        method: 'GET',
+        credentials: 'include', // This is critical for including cookies
+        headers: {
+          'Accept': 'application/json'
+        }
       });
+      
+      console.log("Response status:", response.status);
       
       if (response.ok) {
         const userData = await response.json();
-        // Cache the user data in session storage
-        sessionStorage.setItem('user_info', JSON.stringify(userData));
+        console.log("User data received:", userData);
         return userData;
       }
-      
-      // If we get here, user is not authenticated
+      console.log("Failed to get user data");
       return null;
     } catch (error) {
       console.error('Error checking authentication:', error);

@@ -25,23 +25,24 @@ public class JwtService {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpiration);
         
-        // Extract additional claims from SAML attributes if available
-        Object principal = authentication.getPrincipal();
+        // Extract user details
         String email = authentication.getName();
         String name = null;
         
+        Object principal = authentication.getPrincipal();
         if (principal instanceof Saml2AuthenticatedPrincipal) {
             Saml2AuthenticatedPrincipal samlPrincipal = (Saml2AuthenticatedPrincipal) principal;
             name = samlPrincipal.getFirstAttribute("name");
         }
         
+        // CRITICAL: Ensure the token structure and signature match Kong's expectations
         return Jwts.builder()
             .setSubject(authentication.getName())
             .setIssuedAt(now)
             .setExpiration(expiryDate)
+            .claim("iss", "shared-key") // MUST match Kong consumer key
             .claim("email", email)
             .claim("name", name != null ? name : email)
-            .claim("iss", "shared-key") // Must match Kong config
             .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256)
             .compact();
     }

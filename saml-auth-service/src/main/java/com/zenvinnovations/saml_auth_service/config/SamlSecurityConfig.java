@@ -26,6 +26,8 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 
+import com.zenvinnovations.saml_auth_service.service.JwtService;
+
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -63,6 +65,9 @@ public class SamlSecurityConfig {
     
     @Autowired
     private OpenSaml4AuthenticationProvider samlAuthenticationProvider;
+    
+    @Autowired
+    private JwtService jwtService; // Add this
     
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -159,8 +164,8 @@ public class SamlSecurityConfig {
         return (request, response, authentication) -> {
             logger.info("SAML authentication successful for user: {}", authentication.getName());
             
-            // Generate JWT token directly here
-            String token = generateJwtToken(authentication);
+            // Use JwtService instead of local method
+            String token = jwtService.generateJwtToken(authentication);
             logger.info("Generated JWT token for user: {}", authentication.getName());
             
             // Use default redirect URL
@@ -194,24 +199,5 @@ public class SamlSecurityConfig {
             // Redirect to final URL with token
             response.sendRedirect(finalUrl.toString());
         };
-    }
-    
-    private String generateJwtToken(Authentication authentication) {
-        try {
-            Date now = new Date();
-            Date expiryDate = new Date(now.getTime() + jwtExpiration);
-            
-            return Jwts.builder()
-                .setSubject(authentication.getName())
-                .setIssuedAt(now)
-                .setExpiration(expiryDate)
-                .claim("email", authentication.getName())
-                .claim("iss", "shared-key") // Must match Kong config
-                .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256)
-                .compact();
-        } catch (Exception e) {
-            logger.error("Error generating JWT token", e);
-            throw new RuntimeException("Error generating JWT token", e);
-        }
     }
 }

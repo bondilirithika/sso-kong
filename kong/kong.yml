@@ -17,10 +17,10 @@ consumers:
 services:
   - name: backend-api
     url: https://6e00-122-175-23-214.ngrok-free.app
-    
+
   - name: auth-service
     url: https://6e00-122-175-23-214.ngrok-free.app
-    
+
   - name: frontend-service
     url: http://host.docker.internal:3000
 
@@ -32,8 +32,10 @@ routes:
     service: backend-api
     paths:
       - /api
+      - /api/
+      - ~/api/.*
     strip_path: false
-    
+
   - name: auth-route
     service: auth-service
     paths:
@@ -67,97 +69,28 @@ routes:
 # PLUGINS
 # =====================
 plugins:
-  - name: jwt
+  - id: 11111111-aaaa-4aaa-bbbb-000000000001
+    name: jwt
+    route: api-route
     config:
       secret_is_base64: false
-      key_claim_name: iss
       claims_to_verify:
         - exp
       cookie_names:
         - access_token
+      header_names:
+        - Authorization
       run_on_preflight: false
-      header_names: [] # Explicitly empty to prioritize cookies
-  
-  - name: pre-function
-    tags:
-      - token-handler
-    config:
-      access:
-        - |
-          local token = kong.request.get_query_arg("token")
-          local redirect_uri = kong.request.get_query_arg("redirect_uri")
-          if token then
-            kong.log.notice("Found token in URL, setting cookie")
-            kong.response.set_header("Set-Cookie", 
-              "access_token=" .. token .. 
-              "; HttpOnly; Path=/; SameSite=None; Secure; Max-Age=86400"
-            )
-            local destination = redirect_uri or "http://localhost:8000"
-            kong.log.notice("Redirecting to React app: " .. destination)
-            return kong.response.exit(302, nil, {
-              ["Location"] = destination
-            })
-          end
-  
-  - name: pre-function
-    service: backend-api
-    route: api-route
-    tags:
-      - auth-redirect
-    config:
-      access:
-        - |
-          if kong.client.get_credential() == nil then
-            local path = kong.request.get_path()
-            
-            -- For API calls, return 401 instead of redirecting
-            if string.match(path, "^/api/") then
-              return kong.response.exit(401, { authenticated = false })
-            end
-            
-            -- For UI routes, redirect to auth
-            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. path
-            local encoded_url = ngx.encode_base64(current_url)
-            return kong.response.exit(302, "", {
-              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
-            })
-          end
-  
-  - name: pre-function
-    route: profile-route
-    tags:
-      - protected-route
-    config:
-      access:
-        - |
-          if kong.client.get_credential() == nil then
-            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. kong.request.get_path()
-            local encoded_url = ngx.encode_base64(current_url)
-            return kong.response.exit(302, "", {
-              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
-            })
-          end
+      uri_param_names: []
+      key_claim_name: iss
+      anonymous: ~
 
-  - name: pre-function
-    route: dashboard-route
-    tags:
-      - protected-route
-    config:
-      access:
-        - |
-          if kong.client.get_credential() == nil then
-            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. kong.request.get_path()
-            local encoded_url = ngx.encode_base64(current_url)
-            return kong.response.exit(302, "", {
-              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
-            })
-          end
-
-  - name: cors
+  - id: 11111111-aaaa-4aaa-bbbb-000000000002
+    name: cors
     config:
       origins:
         - "http://localhost:3000"
-        - "http://localhost:8000" 
+        - "http://localhost:8000"
         - "https://6e00-122-175-23-214.ngrok-free.app"
       methods:
         - GET
@@ -174,43 +107,154 @@ plugins:
         - Set-Cookie
       max_age: 3600
 
-  - name: pre-function
+  - id: 11111111-aaaa-4aaa-bbbb-000000000003
+    name: pre-function
     route: api-route
+    tags:
+      - jwt-debug
     config:
       access:
         - |
-          -- Debug JWT validation in detail
-          local jwt_parser = require "kong.plugins.jwt.jwt_parser"
-          
-          -- Check cookie
-          local cookie = kong.request.get_header("cookie")
-          kong.log.notice("Cookie header: " .. (cookie or "nil"))
-          
-          -- Check if Kong sees the credential
-          local credential = kong.client.get_credential()
-          if credential then
-            kong.log.notice("Credential found: " .. credential.key)
+          kong.log.notice("VERBOSE JWT DEBUG ====================")
+          kong.log.notice("Request path: " .. kong.request.get_path())
+          local cookies = kong.request.get_headers()["cookie"] or ""
+          kong.log.notice("Cookies raw: " .. cookies)
+          local access_token = string.match(cookies, "access_token=([^;]+)")
+          if access_token then
+            kong.log.notice("Found token in cookie: " .. access_token:sub(1,10) .. "...")
           else
-            kong.log.notice("No credential found")
-            
-            -- Try to manually extract the JWT
-            local cookies = kong.request.get_headers()["cookie"] or ""
-            local access_token = string.match(cookies, "access_token=([^;]+)")
-            if access_token then
-              kong.log.notice("Found access_token cookie: " .. access_token:sub(1, 20) .. "...")
-              
-              -- Try to parse the JWT manually
-              local jwt, err = jwt_parser:new(access_token)
-              if err then
-                kong.log.err("JWT parse error: " .. err)
-              else
-                local claims = jwt.claims
-                kong.log.notice("JWT parsed successfully")
-                kong.log.notice("JWT issuer: " .. (claims.iss or "nil"))
-                kong.log.notice("JWT subject: " .. (claims.sub or "nil"))
-                kong.log.notice("JWT expiration: " .. (claims.exp or "nil"))
+            kong.log.notice("No access_token found in cookies")
+          end
+          kong.log.notice("VERBOSE JWT DEBUG END ====================")
+
+  - id: 11111111-aaaa-4aaa-bbbb-000000000004
+    name: pre-function
+    route: api-route
+    tags:
+      - inject-jwt-headers
+    config:
+      access:
+        - |
+          local jwt_parser = require "kong.plugins.jwt.jwt_parser"
+          local cookies = kong.request.get_headers()["cookie"] or ""
+          local access_token = string.match(cookies, "access_token=([^;]+)")
+          if access_token then
+            local jwt, err = jwt_parser:new(access_token)
+            if not err and jwt and jwt.claims then
+              if jwt.claims.email then
+                kong.service.request.set_header("X-User-Email", jwt.claims.email)
               end
-            else
-              kong.log.notice("No access_token in cookies")
+              if jwt.claims.name then
+                kong.service.request.set_header("X-User-Name", jwt.claims.name)
+              end
+              if jwt.claims.sub then
+                kong.service.request.set_header("X-User-Sub", jwt.claims.sub)
+              end
             end
           end
+
+  - id: 11111111-aaaa-4aaa-bbbb-000000000005
+    name: pre-function
+    route: api-route
+    tags:
+      - auth-redirect
+    config:
+      access:
+        - |
+          if kong.client.get_credential() == nil then
+            local path = kong.request.get_path()
+            if string.match(path, "^/api/") then
+              return kong.response.exit(401, { authenticated = false })
+            end
+            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. path
+            local encoded_url = ngx.encode_base64(current_url)
+            return kong.response.exit(302, "", {
+              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
+            })
+          end
+
+  - id: 11111111-aaaa-4aaa-bbbb-000000000006
+    name: pre-function
+    route: profile-route
+    tags:
+      - protected-route-profile
+    config:
+      access:
+        - |
+          if kong.client.get_credential() == nil then
+            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. kong.request.get_path()
+            local encoded_url = ngx.encode_base64(current_url)
+            return kong.response.exit(302, "", {
+              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
+            })
+          end
+
+  - id: 11111111-aaaa-4aaa-bbbb-000000000007
+    name: pre-function
+    route: dashboard-route
+    tags:
+      - protected-route-dashboard
+    config:
+      access:
+        - |
+          if kong.client.get_credential() == nil then
+            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. kong.request.get_path()
+            local encoded_url = ngx.encode_base64(current_url)
+            return kong.response.exit(302, "", {
+              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
+            })
+          end
+
+  - id: 11111111-aaaa-4aaa-bbbb-000000000008
+    name: pre-function
+    route: root-route
+    tags:
+      - token-handler
+    config:
+      access:
+        - |
+          local token = kong.request.get_query_arg("token")
+          if token then
+            kong.log.notice("Found token in URL, setting cookie")
+            kong.response.set_header("Set-Cookie",
+              "access_token=" .. token ..
+              "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400"
+            )
+            local uri = kong.request.get_path()
+            local query_params = kong.request.get_query()
+            query_params["token"] = nil
+            local redirect_url = uri
+            local first = true
+            for k, v in pairs(query_params) do
+              if first then
+                redirect_url = redirect_url .. "?"
+                first = false
+              else
+                redirect_url = redirect_url .. "&"
+              end
+              redirect_url = redirect_url .. k .. "=" .. v
+            end
+            kong.log.notice("Redirecting to: " .. redirect_url)
+            return kong.response.exit(302, nil, {
+              ["Location"] = redirect_url
+            })
+          end
+          return true
+
+  - id: 11111111-aaaa-4aaa-bbbb-000000000009
+    name: pre-function
+    route: api-route
+    tags:
+      - jwt-debug-api
+    config:
+      access:
+        - |
+          local headers = kong.request.get_headers()
+          local cookies = headers["cookie"] or ""
+          local auth_header = kong.request.get_header("Authorization") or "none"
+          kong.response.exit(200, {
+            message = "Debug Information",
+            headers = headers,
+            cookies = cookies,
+            auth_header = auth_header
+          })

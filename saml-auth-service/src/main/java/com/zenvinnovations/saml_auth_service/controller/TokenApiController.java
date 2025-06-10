@@ -53,50 +53,25 @@ public class TokenApiController {
     }
     
     @GetMapping("/userinfo")
-    public ResponseEntity<?> getUserInfo(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            logger.warn("Unauthenticated request to /api/userinfo");
+    public ResponseEntity<?> getUserInfo(
+            @RequestHeader(value = "X-User-Email", required = false) String email,
+            @RequestHeader(value = "X-User-Name", required = false) String name,
+            @RequestHeader(value = "X-User-Sub", required = false) String sub) {
+
+        if (email == null && sub == null) {
+            logger.warn("Unauthenticated request to /api/userinfo (missing Kong headers)");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of("authenticated", false));
+                    .body(Map.of("authenticated", false));
         }
-        
-        logger.info("User info requested for: {}", authentication.getName());
-        
-        // Extract the principal as a Saml2AuthenticatedPrincipal if available
-        Object principal = authentication.getPrincipal();
+
+        logger.info("User info requested for: {}", email != null ? email : sub);
+
         Map<String, Object> userInfo = new HashMap<>();
-        
-        if (principal instanceof Saml2AuthenticatedPrincipal) {
-            Saml2AuthenticatedPrincipal samlPrincipal = (Saml2AuthenticatedPrincipal) principal;
-            
-            // Add all available attributes from SAML response
-            userInfo.put("email", authentication.getName());
-            userInfo.put("sub", authentication.getName());
-            userInfo.put("name", samlPrincipal.getFirstAttribute("name"));
-            
-            // Add any other SAML attributes
-            for (String attrName : samlPrincipal.getAttributes().keySet()) {
-                if (!userInfo.containsKey(attrName)) {
-                    userInfo.put(attrName, samlPrincipal.getFirstAttribute(attrName));
-                }
-            }
-        } else {
-            // Fallback if not a SAML principal
-            userInfo.put("email", authentication.getName());
-            userInfo.put("sub", authentication.getName());
-        }
-        
-        // Add authentication info
+        userInfo.put("email", email);
+        userInfo.put("sub", sub != null ? sub : email);
+        userInfo.put("name", name != null ? name : email);
         userInfo.put("authenticated", true);
-        
-        // Add roles/authorities if available
-        if (authentication.getAuthorities() != null) {
-            List<String> authorities = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList());
-            userInfo.put("roles", authorities);
-        }
-        
+
         return ResponseEntity.ok(userInfo);
     }
 }
