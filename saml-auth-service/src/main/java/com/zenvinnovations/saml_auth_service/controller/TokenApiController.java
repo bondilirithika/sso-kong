@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticatedPrincipal;
 
 @RestController
 @RequestMapping("/api")
@@ -55,21 +56,45 @@ public class TokenApiController {
     public ResponseEntity<?> getUserInfo(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             logger.warn("Unauthenticated request to /api/userinfo");
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("authenticated", false));
         }
         
         logger.info("User info requested for: {}", authentication.getName());
         
+        // Extract the principal as a Saml2AuthenticatedPrincipal if available
+        Object principal = authentication.getPrincipal();
         Map<String, Object> userInfo = new HashMap<>();
-        userInfo.put("username", authentication.getName());
+        
+        if (principal instanceof Saml2AuthenticatedPrincipal) {
+            Saml2AuthenticatedPrincipal samlPrincipal = (Saml2AuthenticatedPrincipal) principal;
+            
+            // Add all available attributes from SAML response
+            userInfo.put("email", authentication.getName());
+            userInfo.put("sub", authentication.getName());
+            userInfo.put("name", samlPrincipal.getFirstAttribute("name"));
+            
+            // Add any other SAML attributes
+            for (String attrName : samlPrincipal.getAttributes().keySet()) {
+                if (!userInfo.containsKey(attrName)) {
+                    userInfo.put(attrName, samlPrincipal.getFirstAttribute(attrName));
+                }
+            }
+        } else {
+            // Fallback if not a SAML principal
+            userInfo.put("email", authentication.getName());
+            userInfo.put("sub", authentication.getName());
+        }
+        
+        // Add authentication info
         userInfo.put("authenticated", true);
         
-        // Add other user attributes if available
+        // Add roles/authorities if available
         if (authentication.getAuthorities() != null) {
             List<String> authorities = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
-            userInfo.put("authorities", authorities);
+            userInfo.put("roles", authorities);
         }
         
         return ResponseEntity.ok(userInfo);

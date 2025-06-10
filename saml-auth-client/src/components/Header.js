@@ -26,7 +26,6 @@ const Header = () => {
   
   // Direct login handler for header login button
   const handleLogin = () => {
-    // IMPORTANT: Use AuthService.login instead of direct API call
     AuthService.login();
   };
   

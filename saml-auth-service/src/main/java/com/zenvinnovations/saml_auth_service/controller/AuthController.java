@@ -5,6 +5,7 @@ import com.zenvinnovations.saml_auth_service.service.AuditService;
 import com.zenvinnovations.saml_auth_service.service.JwtService;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -29,6 +30,9 @@ public class AuthController {
     
     @Autowired
     private AuditService auditService;
+
+    @Value("${auth.default-redirect-url}")
+    private String defaultRedirectUrl;
     
     @GetMapping("/token")
     public RedirectView getTokenAndRedirect(Authentication authentication, 
@@ -36,7 +40,7 @@ public class AuthController {
         HttpSession session = request.getSession(false);
         
         // Fallback URL to the Kong API gateway
-        String redirectUrl = "http://localhost:8000"; 
+        String redirectUrl = defaultRedirectUrl; 
         String state = null;
         
         if (session != null) {
@@ -75,7 +79,8 @@ public class AuthController {
         // Log successful authentication
         auditService.logSuccessfulAuthentication("kong", authentication.getName());
         
-        logger.info("Redirecting to: {}", finalUrl.toString().replaceAll("token=.*?(&|$)", "token=REDACTED$1"));
+        String logUrl = finalUrl.toString().replaceAll("token=.*?(&|$)", "token=REDACTED$1");
+        logger.info("Redirecting to: {}", logUrl);
         return new RedirectView(finalUrl.toString());
     }
 

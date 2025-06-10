@@ -58,6 +58,9 @@ public class SamlSecurityConfig {
     @Value("${jwt.expiration}")
     private long jwtExpiration;
     
+    @Value("${auth.default-redirect-url}")
+    private String defaultRedirectUrl;
+    
     @Autowired
     private OpenSaml4AuthenticationProvider samlAuthenticationProvider;
     
@@ -160,13 +163,30 @@ public class SamlSecurityConfig {
             String token = generateJwtToken(authentication);
             logger.info("Generated JWT token for user: {}", authentication.getName());
             
-            // CRITICAL FIX: Always redirect to Kong root path with token
-            // This avoids the loop where we keep redirecting to /api/userinfo
-            String redirectUrl = "http://localhost:8000";
+            // Use default redirect URL
+            String redirectUrl = defaultRedirectUrl;
+            
+            // FIX: Get redirect URL from session instead
+            HttpSession session = request.getSession(false);
+            if (session != null) {
+                String sessionRedirect = (String) session.getAttribute("redirect_after_auth");
+                if (sessionRedirect != null && !sessionRedirect.isEmpty()) {
+                    redirectUrl = sessionRedirect;
+                    logger.info("Using redirect URL from session: {}", redirectUrl);
+                } else {
+                    logger.warn("No redirect_after_auth in session, using fallback URL: {}", redirectUrl);
+                }
+            } else {
+                logger.warn("No session found, using fallback URL: {}", redirectUrl);
+            }
             
             // Build redirect URL with token
             StringBuilder finalUrl = new StringBuilder();
-            finalUrl.append(redirectUrl).append("?token=").append(token);
+            if (redirectUrl.contains("?")) {
+                finalUrl.append(redirectUrl).append("&token=").append(token);
+            } else {
+                finalUrl.append(redirectUrl).append("?token=").append(token);
+            }
             
             String logUrl = finalUrl.toString().replaceAll("token=.*?(&|$)", "token=REDACTED$1");
             logger.info("Redirecting to: {}", logUrl);

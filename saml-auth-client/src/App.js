@@ -1,6 +1,6 @@
 // src/App.js
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
 
@@ -8,6 +8,7 @@ import './App.css';
 import Header from './components/Header';
 import Home from './components/Home';
 import Profile from './components/Profile';
+import Dashboard from './components/Dashboard'; // Import Dashboard component
 
 function App() {
   // Handle token in URL - just remove it for security
@@ -15,7 +16,7 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.has('token')) {
       // Token has been set as HTTP-only cookie by Kong already
-      // Just clean the URL for security
+      // Clean the URL for security
       const url = new URL(window.location);
       url.searchParams.delete('token');
       window.history.replaceState({}, '', url);
@@ -30,7 +31,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/profile" element={<Profile />} />
-            {/* Remove Login and Callback routes - not needed anymore */}
+            <Route path="/dashboard" element={<Dashboard />} /> {/* Add this line */}
           </Routes>
         </div>
         <footer className="bg-light text-center py-3 mt-auto">

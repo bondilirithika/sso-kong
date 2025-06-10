@@ -2,115 +2,61 @@
 import ConfigService from './ConfigService';
 
 /**
- * Helper function to decode JWT tokens
- */
-const parseJwt = (token) => {
-  try {
-    // Split the token and get the payload part
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    console.error('Error parsing JWT:', e);
-    return null;
-  }
-};
-
-/**
- * Minimal authentication service that relies on Kong for most functionality
+ * Simplified authentication service that relies on Kong
  */
 const AuthService = {
   /**
-   * Gets the current user information
-   * @returns {Promise<Object|null>} User information
+   * Gets the current user information from the API
+   * The browser automatically sends the HTTP-only cookie
    */
   async getUserInfo() {
     try {
-      // First, check if we already have auth info in sessionStorage
-      const authInfo = sessionStorage.getItem('auth_info');
-      if (authInfo) {
-        return JSON.parse(authInfo);
+      // Check if we already have cached user info
+      const cachedInfo = sessionStorage.getItem('user_info');
+      if (cachedInfo) {
+        return JSON.parse(cachedInfo);
       }
       
-      // Then check for token in URL - this means we just got redirected back
-      const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token');
+      // Call the userinfo endpoint with credentials to send cookies
+      const response = await fetch(`${ConfigService.getApiBaseUrl()}/api/userinfo`, {
+        credentials: 'include' // Important: This tells fetch to send cookies
+      });
       
-      // If we have a token in the URL, we've successfully authenticated
-      if (token) {
-        // Clean up URL to remove token
-        const newUrl = window.location.href.split('?')[0];
-        window.history.replaceState({}, document.title, newUrl);
-        
-        // Decode the token to extract user info
-        const decodedToken = parseJwt(token);
-        if (decodedToken) {
-          // Create a user object with data from token
-          const user = {
-            ...decodedToken,
-            authenticated: true
-          };
-          
-          // Store in sessionStorage
-          sessionStorage.setItem('auth_info', JSON.stringify(user));
-          return user;
-        }
+      if (response.ok) {
+        const userData = await response.json();
+        // Cache the user data in session storage
+        sessionStorage.setItem('user_info', JSON.stringify(userData));
+        return userData;
       }
       
-      // Try to get user info from backend with cookies
-      try {
-        const response = await fetch(`${ConfigService.getApiBaseUrl()}/api/userinfo`, {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-        
-        if (response.ok) {
-          const userData = await response.json();
-          sessionStorage.setItem('auth_info', JSON.stringify(userData));
-          return userData;
-        }
-        
-        // Handle 401 responses gracefully - this is key!
-        if (response.status === 401) {
-          console.log("Not authenticated (401 response)");
-          return null;
-        }
-      } catch (error) {
-        console.log("Not authenticated, silently continuing");
-      }
-      
+      // If we get here, user is not authenticated
       return null;
     } catch (error) {
-      console.error('Error in auth flow:', error);
+      console.error('Error checking authentication:', error);
       return null;
     }
   },
   
   /**
-   * Explicitly trigger login - only called when login button is clicked
+   * Initiates login flow through Kong
    */
   login() {
-    // IMPORTANT: This directly triggers SAML auth with the right redirect
-    window.location.href = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" + 
-      btoa("http://localhost:8000"); // Base64 encode the redirect URL
+    // Get current URL to redirect back after login
+    const currentUrl = window.location.href;
+    const encodedUrl = btoa(currentUrl);
+    
+    // Redirect to auth through Kong
+    window.location.href = `${ConfigService.getApiBaseUrl()}/auth?redirect_uri=${encodedUrl}`;
   },
   
   /**
-   * Logs the user out
+   * Logs the user out by calling logout endpoint
    */
   logout() {
-    // Clear auth info
-    sessionStorage.removeItem('auth_info');
+    // Clear local cache
+    sessionStorage.removeItem('user_info');
     
-    // Redirect to logout
+    // Call logout endpoint
     window.location.href = `${ConfigService.getApiBaseUrl()}/logout`;
   }
 };

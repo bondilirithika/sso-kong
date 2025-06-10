@@ -11,16 +11,10 @@ const Profile = () => {
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        const userData = await AuthService.getCurrentUser();
-        if (!userData) {
-          navigate('/login');
-          return;
-        }
-        
+        const userData = await AuthService.getUserInfo();
         setUser(userData);
       } catch (error) {
         console.error("Error loading user data:", error);
-        navigate('/login');
       } finally {
         setLoading(false);
       }
@@ -72,16 +66,10 @@ const Profile = () => {
                   <td><strong>Name:</strong></td>
                   <td>{user.name || 'Not available'}</td>
                 </tr>
-                {user.iat && (
+                {user.roles && (
                   <tr>
-                    <td><strong>Token Issued:</strong></td>
-                    <td>{new Date(user.iat * 1000).toLocaleString()}</td>
-                  </tr>
-                )}
-                {user.exp && (
-                  <tr>
-                    <td><strong>Token Expires:</strong></td>
-                    <td>{new Date(user.exp * 1000).toLocaleString()}</td>
+                    <td><strong>Roles:</strong></td>
+                    <td>{user.roles.join(', ') || 'No roles assigned'}</td>
                   </tr>
                 )}
               </tbody>

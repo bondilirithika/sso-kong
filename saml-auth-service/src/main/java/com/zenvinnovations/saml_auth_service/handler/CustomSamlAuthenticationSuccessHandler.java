@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,6 +28,9 @@ public class CustomSamlAuthenticationSuccessHandler implements AuthenticationSuc
     @Autowired
     private AuditService auditService;
     
+    @Value("${auth.defaultRedirectUrl:http://localhost:8000}")
+    private String defaultRedirectUrl;
+    
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, 
                                       Authentication authentication) throws IOException {
@@ -37,13 +41,13 @@ public class CustomSamlAuthenticationSuccessHandler implements AuthenticationSuc
         session.setAttribute("authenticated_user", authentication.getName());
         
         // Get redirect URL from session or use fallback
-        String redirectUrl = "http://localhost:8000";
+        String redirectUrl = defaultRedirectUrl; // From @Value injection
         String sessionRedirect = (String) session.getAttribute("redirect_after_auth");
         if (sessionRedirect != null && !sessionRedirect.isEmpty()) {
             redirectUrl = sessionRedirect;
             logger.info("Using redirect URL from session: {}", redirectUrl);
         } else {
-            logger.warn("No redirect_after_auth in session, using fallback URL: {}", redirectUrl);
+            logger.warn("No redirect_after_auth in session, using default: {}", redirectUrl);
         }
         
         // Generate JWT token

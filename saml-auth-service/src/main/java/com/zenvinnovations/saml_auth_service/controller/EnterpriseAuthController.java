@@ -14,6 +14,7 @@ import org.springframework.web.servlet.view.RedirectView;
 
 import java.util.Arrays;
 import java.util.List;
+import java.net.URL;
 
 @Controller
 public class EnterpriseAuthController {
@@ -22,6 +23,9 @@ public class EnterpriseAuthController {
     
     @Value("${auth.allowed-domains}")
     private String allowedDomains;
+    
+    @Value("${auth.default-redirect-url}")
+    private String defaultRedirectUrl;
     
     @Autowired
     private AuditService auditService;
@@ -40,7 +44,7 @@ public class EnterpriseAuthController {
                 
             if (user != null) {
                 logger.info("User already authenticated, redirecting to home: {}", user);
-                return new RedirectView("http://localhost:3000");
+                return new RedirectView(defaultRedirectUrl);
             }
             
             // If not authenticated and no redirect_uri, use default
@@ -90,14 +94,20 @@ public class EnterpriseAuthController {
     }
     
     private boolean isValidRedirectUri(String uri) {
-        if (uri == null || uri.trim().isEmpty()) {
+        try {
+            // Parse the URI to extract host
+            URL url = new URL(uri);
+            String host = url.getHost();
+            
+            // Get allowed domains from configuration
+            List<String> domains = Arrays.asList(allowedDomains.split(","));
+            
+            // Enhanced check: host must exactly match domain or be a subdomain
+            return domains.stream().anyMatch(domain -> 
+                host.equals(domain) || host.endsWith("." + domain));
+        } catch (Exception e) {
+            logger.error("Error validating redirect URI: {}", e.getMessage(), e);
             return false;
         }
-        
-        // Get allowed domains from configuration
-        List<String> domains = Arrays.asList(allowedDomains.split(","));
-        
-        // Check if URI contains any allowed domain
-        return domains.stream().anyMatch(uri::contains);
     }
 }
