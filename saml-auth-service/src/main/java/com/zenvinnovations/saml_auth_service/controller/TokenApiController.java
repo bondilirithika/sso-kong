@@ -7,15 +7,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Enumeration;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticatedPrincipal;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Cookie;
 
 @RestController
 @RequestMapping("/api")
@@ -53,25 +51,47 @@ public class TokenApiController {
     }
     
     @GetMapping("/userinfo")
-    public ResponseEntity<?> getUserInfo(
-            @RequestHeader(value = "X-User-Email", required = false) String email,
-            @RequestHeader(value = "X-User-Name", required = false) String name,
-            @RequestHeader(value = "X-User-Sub", required = false) String sub) {
-
-        if (email == null && sub == null) {
-            logger.warn("Unauthenticated request to /api/userinfo (missing Kong headers)");
+    public ResponseEntity<?> getUserInfo(HttpServletRequest request) {
+        try {
+            // Get JWT token from cookie directly
+            Cookie[] cookies = request.getCookies();
+            String token = null;
+            
+            if (cookies != null) {
+                for (Cookie cookie : cookies) {
+                    if ("access_token".equals(cookie.getName())) {
+                        token = cookie.getValue();
+                        break;
+                    }
+                }
+            }
+            
+            // If token was found in cookies, validate it
+            if (token != null) {
+                try {
+                    Claims claims = jwtService.validateToken(token);
+                    
+                    Map<String, Object> userInfo = new HashMap<>();
+                    userInfo.put("sub", claims.getSubject());
+                    userInfo.put("email", claims.get("email", String.class));
+                    userInfo.put("name", claims.get("name", String.class)); 
+                    userInfo.put("authenticated", true);
+                    
+                    return ResponseEntity.ok(userInfo);
+                } catch (Exception e) {
+                    logger.error("Token validation failed: {}", e.getMessage());
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Invalid token"));
+                }
+            }
+            
+            // No token found, user is not authenticated
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("authenticated", false));
+                .body(Map.of("error", "Not authenticated"));
+        } catch (Exception e) {
+            logger.error("Error processing userinfo request", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Internal server error"));
         }
-
-        logger.info("User info requested for: {}", email != null ? email : sub);
-
-        Map<String, Object> userInfo = new HashMap<>();
-        userInfo.put("email", email);
-        userInfo.put("sub", sub != null ? sub : email);
-        userInfo.put("name", name != null ? name : email);
-        userInfo.put("authenticated", true);
-
-        return ResponseEntity.ok(userInfo);
     }
 }

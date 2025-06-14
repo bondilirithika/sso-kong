@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import AuthService from '../services/AuthService';
+import ApiService from '../services/ApiService';
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    AuthService.getUserInfo()
+    ApiService.getUserInfo()
       .then(userData => {
         setUser(userData);
         setLoading(false);

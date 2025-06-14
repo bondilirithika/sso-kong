@@ -17,7 +17,7 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                    .allowedOriginPatterns("*")  // Allow all origins for SAML flow
+                    .allowedOriginPatterns("*")
                     .allowedMethods("*")
                     .allowedHeaders("*")
                     .exposedHeaders("*")
@@ -33,6 +33,8 @@ public class CorsConfig {
         config.addAllowedMethod("*");
         config.addAllowedHeader("*");
         config.setAllowCredentials(true);
+        config.addExposedHeader("Authorization");
+        config.addExposedHeader("Set-Cookie");
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

@@ -1,18 +1,18 @@
 // src/components/Header.js
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import AuthService from '../services/AuthService';
+import ApiService from '../services/ApiService';
+import ConfigService from '../services/ConfigService';
 
 const Header = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
   
-  // Only check auth status when we need to display user info in header
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const userData = await AuthService.getUserInfo();
+        const userData = await ApiService.getUserInfo();
         setUser(userData);
       } catch (error) {
         console.error("Error checking auth status:", error);
@@ -22,12 +22,7 @@ const Header = () => {
     };
     
     checkAuth();
-  }, [location.pathname]); // Re-check when route changes
-  
-  // Direct login handler for header login button
-  const handleLogin = () => {
-    AuthService.login();
-  };
+  }, [location.pathname]);
   
   return (
     <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
@@ -63,13 +58,21 @@ const Header = () => {
                 <span className="nav-link">{user.email || user.sub}</span>
               </li>
               <li className="nav-item">
-                <button className="btn btn-link nav-link" onClick={AuthService.logout}>
+                <a 
+                  href={`${ConfigService.getApiBaseUrl()}/logout`}
+                  className="btn btn-link nav-link"
+                >
                   Logout
-                </button>
+                </a>
               </li>
             </ul>
           ) : (
-            <button className="btn btn-outline-light" onClick={handleLogin}>Login</button>
+            <a 
+              href={`${ConfigService.getApiBaseUrl()}/auth`}
+              className="btn btn-outline-light"
+            >
+              Login
+            </a>
           )}
         </div>
       </div>

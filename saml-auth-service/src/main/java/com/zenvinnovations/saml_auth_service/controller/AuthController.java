@@ -91,7 +91,8 @@ public class AuthController {
             session.invalidate();
         }
 
-        // For a complete logout, the client can redirect to Google's logout URL
+        // For a complete logout, provide the Google logout URL
+        // But let Kong handle the cookie and redirect
         String googleLogoutUrl = "https://accounts.google.com/logout";
         
         return ResponseEntity.ok(Map.of(

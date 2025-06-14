@@ -5,9 +5,9 @@ _transform: true
 # CONSUMERS
 # =====================
 consumers:
-  - username: shared-consumer
+  - username: shared-consumer  # This is just a name
     jwt_secrets:
-      - key: shared-key
+      - key: shared-key        # This MUST match the 'iss' claim in your JWT
         secret: your_strong_secret_key_at_least_32_chars_long
         algorithm: HS256
 
@@ -69,22 +69,20 @@ routes:
 # PLUGINS
 # =====================
 plugins:
+  # JWT plugin must be first for api-route!
   - id: 11111111-aaaa-4aaa-bbbb-000000000001
     name: jwt
     route: api-route
     config:
-      secret_is_base64: false
-      claims_to_verify:
-        - exp
       cookie_names:
         - access_token
-      header_names:
-        - Authorization
-      run_on_preflight: false
-      uri_param_names: []
       key_claim_name: iss
-      anonymous: ~
+      claims_to_verify:
+        - exp
+      run_on_preflight: true
+      secret_is_base64: false
 
+  # CORS plugin (global)
   - id: 11111111-aaaa-4aaa-bbbb-000000000002
     name: cors
     config:
@@ -107,6 +105,7 @@ plugins:
         - Set-Cookie
       max_age: 3600
 
+  # Debug: log JWT cookie presence
   - id: 11111111-aaaa-4aaa-bbbb-000000000003
     name: pre-function
     route: api-route
@@ -127,6 +126,7 @@ plugins:
           end
           kong.log.notice("VERBOSE JWT DEBUG END ====================")
 
+  # Inject user info headers from JWT claims
   - id: 11111111-aaaa-4aaa-bbbb-000000000004
     name: pre-function
     route: api-route
@@ -135,27 +135,30 @@ plugins:
     config:
       access:
         - |
-          local jwt_parser = require "kong.plugins.jwt.jwt_parser"
-          local cookies = kong.request.get_headers()["cookie"] or ""
-          local access_token = string.match(cookies, "access_token=([^;]+)")
-          if access_token then
-            local jwt, err = jwt_parser:new(access_token)
-            if not err and jwt and jwt.claims then
-              if jwt.claims.email then
-                kong.service.request.set_header("X-User-Email", jwt.claims.email)
-              end
-              if jwt.claims.name then
-                kong.service.request.set_header("X-User-Name", jwt.claims.name)
-              end
-              if jwt.claims.sub then
-                kong.service.request.set_header("X-User-Sub", jwt.claims.sub)
-              end
+          local jwt_credential = kong.client.get_credential()
+          if jwt_credential then
+            -- The JWT plugin has already validated the token at this point
+            -- Extract JWT payload from the credential
+            local jwt_payload = jwt_credential.payload
+            
+            -- Set headers from the JWT claims
+            if jwt_payload.email then
+              kong.service.request.set_header("X-User-Email", jwt_payload.email)
+            end
+            
+            if jwt_payload.name then
+              kong.service.request.set_header("X-User-Name", jwt_payload.name)
+            end
+            
+            if jwt_payload.sub then
+              kong.service.request.set_header("X-User-Sub", jwt_payload.sub)
             end
           end
 
+  # Auth redirect for API: 401 if not authenticated, else redirect browser
   - id: 11111111-aaaa-4aaa-bbbb-000000000005
     name: pre-function
-    route: api-route
+    route: api-route # Only apply to API routes, not to root!
     tags:
       - auth-redirect
     config:
@@ -164,15 +167,12 @@ plugins:
           if kong.client.get_credential() == nil then
             local path = kong.request.get_path()
             if string.match(path, "^/api/") then
+              -- For API requests, just return 401
               return kong.response.exit(401, { authenticated = false })
             end
-            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. path
-            local encoded_url = ngx.encode_base64(current_url)
-            return kong.response.exit(302, "", {
-              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
-            })
           end
 
+  # Protect /profile
   - id: 11111111-aaaa-4aaa-bbbb-000000000006
     name: pre-function
     route: profile-route
@@ -184,11 +184,16 @@ plugins:
           if kong.client.get_credential() == nil then
             local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. kong.request.get_path()
             local encoded_url = ngx.encode_base64(current_url)
+            
+            -- Log that we're redirecting for auth with return URL
+            kong.log.notice("Auth required for protected route, redirecting with return URL: " .. current_url)
+            
             return kong.response.exit(302, "", {
-              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
+              ["Location"] = "/auth?redirect_uri=" .. encoded_url
             })
           end
 
+  # Protect /dashboard
   - id: 11111111-aaaa-4aaa-bbbb-000000000007
     name: pre-function
     route: dashboard-route
@@ -205,6 +210,7 @@ plugins:
             })
           end
 
+  # Token handler for root: set cookie from ?token=...
   - id: 11111111-aaaa-4aaa-bbbb-000000000008
     name: pre-function
     route: root-route
@@ -220,9 +226,13 @@ plugins:
               "access_token=" .. token ..
               "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400"
             )
+            
+            -- Strip the token from URL for security
             local uri = kong.request.get_path()
             local query_params = kong.request.get_query()
             query_params["token"] = nil
+            
+            -- Rebuild the URL without the token
             local redirect_url = uri
             local first = true
             for k, v in pairs(query_params) do
@@ -234,6 +244,7 @@ plugins:
               end
               redirect_url = redirect_url .. k .. "=" .. v
             end
+            
             kong.log.notice("Redirecting to: " .. redirect_url)
             return kong.response.exit(302, nil, {
               ["Location"] = redirect_url
@@ -241,20 +252,132 @@ plugins:
           end
           return true
 
-  - id: 11111111-aaaa-4aaa-bbbb-000000000009
+  # Debug: detailed JWT inspection (FIXED VERSION)
+  - id: 11111111-aaaa-4aaa-bbbb-000000000010
     name: pre-function
+    tags: ["debug"]
     route: api-route
-    tags:
-      - jwt-debug-api
     config:
       access:
         - |
-          local headers = kong.request.get_headers()
-          local cookies = headers["cookie"] or ""
-          local auth_header = kong.request.get_header("Authorization") or "none"
-          kong.response.exit(200, {
-            message = "Debug Information",
-            headers = headers,
-            cookies = cookies,
-            auth_header = auth_header
-          })
+          kong.log.notice("SAFE JWT DEBUG ====================")
+          local cookies = kong.request.get_headers()["cookie"] or ""
+          kong.log.notice("Cookies: " .. cookies)
+          
+          local credential = kong.client.get_credential()
+          if credential then
+            kong.log.notice("JWT credential found with key: " .. (credential.key or "unknown"))
+          else
+            kong.log.notice("No JWT credential found!")
+          end
+  
+  # Logout handler
+  - id: 11111111-aaaa-4aaa-bbbb-000000000009
+    name: pre-function
+    route: auth-route
+    tags:
+      - logout-handler
+    config:
+      access:
+        - |
+          -- Only handle the logout path
+          if kong.request.get_path() == "/logout" then
+            -- Get the current URL or fallback to home
+            local redirect_to = kong.request.get_query_arg("redirect_to") or "/"
+            
+            -- Get return_to (where to go after re-login)
+            local return_to = kong.request.get_query_arg("return_to")
+            
+            -- Clear the JWT cookie
+            kong.response.set_header("Set-Cookie", 
+              "access_token=; Path=/; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
+            )
+            
+            -- If return_to is specified, encode it and add to auth redirect
+            if return_to then
+              local encoded_return = ngx.encode_base64(return_to)
+              return kong.response.exit(302, nil, {
+                ["Location"] = "/auth?redirect_uri=" .. encoded_return
+              })
+            else
+              -- Just redirect to home or specified URL
+              return kong.response.exit(302, nil, {
+                ["Location"] = redirect_to
+              })
+            end
+          end
+
+  # Enhanced auth handler that captures referer automatically
+  - id: 11111111-aaaa-4aaa-bbbb-00000000000A
+    name: pre-function
+    route: auth-route
+    tags:
+      - enhanced-auth-handler
+    config:
+      access:
+        - |
+          -- Only handle the auth path
+          if kong.request.get_path() == "/auth" then
+            -- Get the referer header or explicit redirect URI
+            local redirect_uri = kong.request.get_query_arg("redirect_uri")
+            local referer = kong.request.get_header("referer")
+            
+            -- If no explicit redirect provided, use referer
+            if (not redirect_uri or redirect_uri == "") and referer then
+              -- Encode referer and add it to the request
+              local encoded_referer = ngx.encode_base64(referer)
+              local uri = kong.request.get_path()
+              local args = kong.request.get_query()
+              args["redirect_uri"] = encoded_referer
+              
+              -- Rebuild URL with encoded referer
+              local query_string = ""
+              for k, v in pairs(args) do
+                if query_string == "" then
+                  query_string = "?" .. k .. "=" .. v
+                else
+                  query_string = query_string .. "&" .. k .. "=" .. v
+                end
+              end
+              
+              -- Forward to auth service with the encoded referer
+              kong.log.notice("Adding referer to auth request: " .. referer)
+              return kong.service.request.set_path(uri .. query_string)
+            end
+          end
+
+  # Enhanced logout handler that captures referer automatically
+  - id: 11111111-aaaa-4aaa-bbbb-00000000000B
+    name: pre-function
+    route: auth-route
+    tags:
+      - enhanced-logout-handler
+    config:
+      access:
+        - |
+          -- Only handle the logout path
+          if kong.request.get_path() == "/logout" then
+            -- Get the referer header or explicit redirect_to
+            local redirect_to = kong.request.get_query_arg("redirect_to") or "/"
+            local referer = kong.request.get_header("referer") 
+            
+            -- If no explicit redirect, use referer domain + "/"
+            if redirect_to == "/" and referer then
+              -- Extract domain from referer
+              local domain_pattern = "^(https?://[^/]+)"
+              local domain = string.match(referer, domain_pattern)
+              if domain then
+                redirect_to = domain .. "/"
+              end
+            end
+            
+            -- Clear the JWT cookie
+            kong.response.set_header("Set-Cookie", 
+              "access_token=; Path=/; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
+            )
+            
+            -- Redirect to the determined URL
+            return kong.response.exit(302, nil, {
+              ["Location"] = redirect_to
+            })
+          end

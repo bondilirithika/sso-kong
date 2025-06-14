@@ -1,7 +1,8 @@
 // src/components/Home.js
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import AuthService from '../services/AuthService';
+import ApiService from '../services/ApiService';
+import ConfigService from '../services/ConfigService';
 
 const Home = () => {
   const [user, setUser] = useState(null);
@@ -9,7 +10,7 @@ const Home = () => {
   
   useEffect(() => {
     // Check if user is authenticated
-    AuthService.getUserInfo()
+    ApiService.getUserInfo()
       .then(userData => {
         setUser(userData);
         setLoading(false);
@@ -50,23 +51,23 @@ const Home = () => {
                 <Link to="/dashboard" className="btn btn-success">
                   Dashboard
                 </Link>
-                <button 
-                  className="btn btn-outline-danger" 
-                  onClick={AuthService.logout}
+                <a 
+                  href={`${ConfigService.getApiBaseUrl()}/logout`}
+                  className="btn btn-outline-danger"
                 >
                   Logout
-                </button>
+                </a>
               </div>
             </>
           ) : (
             <>
               <p>Please login to access protected features.</p>
-              <button 
-                className="btn btn-primary" 
-                onClick={() => AuthService.login()}
+              <a 
+                href={`${ConfigService.getApiBaseUrl()}/auth`}
+                className="btn btn-primary"
               >
                 Login with Google
-              </button>
+              </a>
             </>
           )}
         </div>

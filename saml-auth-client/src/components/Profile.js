@@ -1,7 +1,8 @@
 // src/components/Profile.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AuthService from '../services/AuthService';
+import ApiService from '../services/ApiService';
+import ConfigService from '../services/ConfigService';
 
 const Profile = () => {
   const [user, setUser] = useState(null);
@@ -11,7 +12,7 @@ const Profile = () => {
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        const userData = await AuthService.getUserInfo();
+        const userData = await ApiService.getUserInfo();
         setUser(userData);
       } catch (error) {
         console.error("Error loading user data:", error);
@@ -22,10 +23,6 @@ const Profile = () => {
     
     loadUserData();
   }, [navigate]);
-
-  const handleLogout = () => {
-    AuthService.logout();
-  };
 
   if (loading) {
     return (
@@ -42,12 +39,12 @@ const Profile = () => {
       <div className="card">
         <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
           <h3 className="mb-0">User Profile</h3>
-          <button 
-            className="btn btn-sm btn-light" 
-            onClick={handleLogout}
+          <a 
+            href={`${ConfigService.getApiBaseUrl()}/logout`}
+            className="btn btn-sm btn-light"
           >
             Logout
-          </button>
+          </a>
         </div>
         <div className="card-body">
           <div className="mb-4">
