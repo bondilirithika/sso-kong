@@ -17,6 +17,7 @@ import org.springframework.security.saml2.provider.service.registration.InMemory
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.config.http.SessionCreationPolicy;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -69,6 +70,9 @@ public class SamlSecurityConfig {
     @Autowired
     private JwtService jwtService; // Add this
     
+    @Autowired(required = false)
+    private AuthenticationSuccessHandler customSamlAuthenticationSuccessHandler;
+    
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -79,9 +83,15 @@ public class SamlSecurityConfig {
             .saml2Login(saml2 -> saml2
                 .loginPage("/auth") // This is important! Prevents default login page
                 .defaultSuccessUrl("/token", true)
-                .successHandler(samlAuthenticationSuccessHandler())
+                .successHandler(customSamlAuthenticationSuccessHandler)
                 .authenticationManager(samlAuthenticationProvider::authenticate)
                 .loginProcessingUrl("/login/saml2/sso/google-workspace")
+            )
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.ALWAYS)
+                .sessionFixation().migrateSession() // This preserves attributes while changing session ID
+                .maximumSessions(1)
+                .maxSessionsPreventsLogin(false)
             )
             .logout(logout -> logout
                 .logoutRequestMatcher(new AntPathRequestMatcher("/logout"))
@@ -159,45 +169,8 @@ public class SamlSecurityConfig {
         }
     }
     
-    @Bean
+    @Bean 
     public AuthenticationSuccessHandler samlAuthenticationSuccessHandler() {
-        return (request, response, authentication) -> {
-            logger.info("SAML authentication successful for user: {}", authentication.getName());
-            
-            // Use JwtService instead of local method
-            String token = jwtService.generateJwtToken(authentication);
-            logger.info("Generated JWT token for user: {}", authentication.getName());
-            
-            // Use default redirect URL
-            String redirectUrl = defaultRedirectUrl;
-            
-            // FIX: Get redirect URL from session instead
-            HttpSession session = request.getSession(false);
-            if (session != null) {
-                String sessionRedirect = (String) session.getAttribute("redirect_after_auth");
-                if (sessionRedirect != null && !sessionRedirect.isEmpty()) {
-                    redirectUrl = sessionRedirect;
-                    logger.info("Using redirect URL from session: {}", redirectUrl);
-                } else {
-                    logger.warn("No redirect_after_auth in session, using fallback URL: {}", redirectUrl);
-                }
-            } else {
-                logger.warn("No session found, using fallback URL: {}", redirectUrl);
-            }
-            
-            // Build redirect URL with token
-            StringBuilder finalUrl = new StringBuilder();
-            if (redirectUrl.contains("?")) {
-                finalUrl.append(redirectUrl).append("&token=").append(token);
-            } else {
-                finalUrl.append(redirectUrl).append("?token=").append(token);
-            }
-            
-            String logUrl = finalUrl.toString().replaceAll("token=.*?(&|$)", "token=REDACTED$1");
-            logger.info("Redirecting to: {}", logUrl);
-            
-            // Redirect to final URL with token
-            response.sendRedirect(finalUrl.toString());
-        };
+        return customSamlAuthenticationSuccessHandler;
     }
 }

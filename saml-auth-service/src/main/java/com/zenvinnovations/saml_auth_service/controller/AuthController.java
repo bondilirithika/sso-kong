@@ -11,11 +11,18 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.view.RedirectView;
 
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.util.Enumeration;
 import java.util.Map;
+import java.util.HashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,21 +91,72 @@ public class AuthController {
         return new RedirectView(finalUrl.toString());
     }
 
-    @PostMapping("/logout")
-    public ResponseEntity<?> logout(HttpServletRequest request) {
+    @RequestMapping(value = "/logout", method = {RequestMethod.POST, RequestMethod.GET})
+    public ResponseEntity<?> logout(
+            @RequestParam(required = false) String forwarded,
+            @RequestParam(required = false) String redirect_to,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        
+        logger.info("Logout request received, forwarded={}, redirect_to={}", forwarded, redirect_to);
+        
+        // Invalidate session
         HttpSession session = request.getSession(false);
         if (session != null) {
-            session.invalidate();
+            logger.info("Invalidating session: {}", session.getId());
+            try {
+                // Log session attributes before invalidating
+                Enumeration<String> attributeNames = session.getAttributeNames();
+                while (attributeNames.hasMoreElements()) {
+                    String name = attributeNames.nextElement();
+                    logger.info("Session attribute before invalidation: {} = {}", name, session.getAttribute(name));
+                }
+                session.invalidate();
+                logger.info("Session invalidated successfully");
+            } catch (Exception e) {
+                logger.error("Error invalidating session", e);
+            }
+        } else {
+            logger.info("No session to invalidate");
         }
 
-        // For a complete logout, provide the Google logout URL
-        // But let Kong handle the cookie and redirect
-        String googleLogoutUrl = "https://accounts.google.com/logout";
+        // Clear all cookies
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                logger.info("Found cookie: {}", cookie.getName());
+                if (cookie.getName().contains("redirect") || 
+                    cookie.getName().contains("auth") || 
+                    cookie.getName().contains("return") ||
+                    cookie.getName().equals("JSESSIONID") ||
+                    cookie.getName().equals("access_token")) {
+                    
+                    Cookie newCookie = new Cookie(cookie.getName(), "");
+                    newCookie.setMaxAge(0);
+                    newCookie.setPath("/");
+                    response.addCookie(newCookie);
+                    logger.info("Cleared cookie: {}", cookie.getName());
+                }
+            }
+        } else {
+            logger.info("No cookies found to clear");
+        }
+
+        // IMPORTANT: Always return a 200 OK response with JSON, never a 302 redirect
+        // Kong will handle the actual redirect
+        Map<String, String> responseBody = new HashMap<>();
+        responseBody.put("message", "Logout successful");
+        responseBody.put("status", "session_invalidated");
         
-        return ResponseEntity.ok(Map.of(
-            "message", "Logout successful",
-            "idpLogoutUrl", googleLogoutUrl
-        ));
+        // Still include the redirect_to for Kong's reference
+        String finalRedirect = redirect_to != null ? redirect_to : "http://localhost:8000/";
+        if (finalRedirect.contains("ngrok")) {
+            finalRedirect = "http://localhost:8000/";
+        }
+        responseBody.put("redirect_to", finalRedirect);
+        
+        logger.info("Returning JSON response with redirect_to: {}", finalRedirect);
+        return ResponseEntity.ok(responseBody);
     }
     
     @GetMapping("/login/error")
