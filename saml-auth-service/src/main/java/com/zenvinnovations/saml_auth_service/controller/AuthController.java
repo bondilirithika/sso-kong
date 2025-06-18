@@ -151,6 +151,8 @@ public class AuthController {
         // Still include the redirect_to for Kong's reference
         String finalRedirect = redirect_to != null ? redirect_to : "http://localhost:8000/";
         if (finalRedirect.contains("ngrok")) {
+            // Update any references to old ngrok URLs
+            finalRedirect = finalRedirect.replace("6e00-122-175-23-214.ngrok-free.app", "9a96-122-171-174-91.ngrok-free.app");
             finalRedirect = "http://localhost:8000/";
         }
         responseBody.put("redirect_to", finalRedirect);

@@ -16,10 +16,10 @@ consumers:
 # =====================
 services:
   - name: backend-api
-    url: https://6e00-122-175-23-214.ngrok-free.app
+    url: https://9a96-122-171-174-91.ngrok-free.app
 
   - name: auth-service
-    url: https://6e00-122-175-23-214.ngrok-free.app
+    url: https://9a96-122-171-174-91.ngrok-free.app
 
   - name: frontend-service
     url: http://host.docker.internal:3000
@@ -90,7 +90,7 @@ plugins:
       origins:
         - "http://localhost:3000"
         - "http://localhost:8000"
-        - "https://6e00-122-175-23-214.ngrok-free.app"
+        - "https://9a96-122-171-174-91.ngrok-free.app"
       methods:
         - GET
         - POST
@@ -219,7 +219,7 @@ plugins:
             local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. kong.request.get_path()
             local encoded_url = ngx.encode_base64(current_url)
             return kong.response.exit(302, "", {
-              ["Location"] = "https://6e00-122-175-23-214.ngrok-free.app/auth?redirect_uri=" .. encoded_url
+              ["Location"] = "https://9a96-122-171-174-91.ngrok-free.app/auth?redirect_uri=" .. encoded_url
             })
           end
 

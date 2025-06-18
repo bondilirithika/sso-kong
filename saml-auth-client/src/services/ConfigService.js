@@ -7,7 +7,7 @@ const ConfigService = {
   
   getAuthUrl() {
     // Keep ngrok URL for server-to-server communication
-    return process.env.REACT_APP_AUTH_URL || 'https://6e00-122-175-23-214.ngrok-free.app';
+    return process.env.REACT_APP_AUTH_URL || 'https://9a96-122-171-174-91.ngrok-free.app';
   },
   
   // For debugging and future expansions
