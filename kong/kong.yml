@@ -59,6 +59,7 @@ routes:
       - /dashboard
     strip_path: false
 
+
   - name: root-route
     service: frontend-service
     paths:
@@ -205,74 +206,70 @@ plugins:
               ["Location"] = "/auth?redirect_uri=" .. encoded_url
             })
           end
-  # Protect /dashboard
-  - id: 11111111-aaaa-4aaa-bbbb-000000000007
-    name: pre-function
-    route: dashboard-route
-    tags:
-      - protected-route-dashboard
-      - redirect-flow-manager
-    config:
-      access:
-        - |
-          -- Handle token in query (after auth)
-          local token = kong.request.get_query_arg("token")
-          if token then
-            kong.log.notice("REDIRECT FLOW MANAGER: Processing token")
-            kong.response.set_header("Set-Cookie",
-              "access_token=" .. token ..
-              "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400"
-            )
-            local cookies = kong.request.get_headers()["cookie"] or ""
-            local redirect_cookie = string.match(cookies, "return_after_auth=([^;]+)")
-            local redirect_url = "/"
-            if redirect_cookie then
-              local decoded_cookie = ngx.decode_base64(redirect_cookie)
-              if decoded_cookie then
-                if decoded_cookie:match("^http://localhost/") then
-                  decoded_cookie = decoded_cookie:gsub("http://localhost/", "http://localhost:8000/")
-                end
-                redirect_url = decoded_cookie
-                kong.response.add_header("Set-Cookie",
-                  "return_after_auth=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
-                )
-              end
-            end
-            kong.log.notice("REDIRECT FLOW MANAGER: Redirecting to: " .. redirect_url)
-            return kong.response.exit(302, nil, {
-              ["Location"] = redirect_url
-            })
-          end
+  # # Protect /dashboard
+  # - id: 11111111-aaaa-4aaa-bbbb-000000000007
+  #   name: pre-function
+  #   route: dashboard-route
+  #   tags:
+  #     - protected-route-dashboard
+  #     - redirect-flow-manager
+  #   config:
+  #     access:
+  #       - |
+  #         local function decode_base64url(input)
+  #           input = input:gsub('-', '+'):gsub('_', '/')
+  #           local pad = #input % 4
+  #           if pad > 0 then input = input .. string.rep('=', 4 - pad) end
+  #           return ngx.decode_base64(input)
+  #         end
 
-          -- Check for JWT credential
-          local jwt_credential = kong.client.get_credential()
-          local valid = false
-          if jwt_credential and jwt_credential.payload and jwt_credential.payload.email then
-            valid = true
-          end
+  #         local cookies = kong.request.get_headers()["cookie"] or ""
+  #         local access_token = string.match(cookies, "access_token=([^;]+)")
+  #         local valid = false
+  #         local jwt_payload
 
-          if not valid then
-            local scheme = kong.request.get_scheme()
-            local host = kong.request.get_host()
-            local port = kong.request.get_port()
-            local path = kong.request.get_path()
-            local current_url = scheme .. "://" .. host
-            if port and port ~= 80 and port ~= 443 then
-              current_url = current_url .. ":" .. port
-            end
-            current_url = current_url .. path
-            local encoded_url = ngx.encode_base64(current_url)
-            kong.response.set_header("Set-Cookie",
-              "return_after_auth=" .. encoded_url ..
-              "; HttpOnly; Path=/; SameSite=Lax; Max-Age=300"
-            )
-            kong.log.notice("Auth required for /dashboard, redirecting to /auth. Will return to: " .. current_url)
-            return kong.response.exit(302, "", {
-              ["Location"] = "/auth"
-            })
-          else
-            kong.log.notice("Dashboard access granted to: " .. (jwt_credential.payload.email or "unknown user"))
-          end
+  #         if access_token then
+  #           local header_b64, payload_b64, signature_b64 = access_token:match("([^.]+)%.([^.]+)%.([^.]+)")
+  #           if payload_b64 then
+  #             local payload_json = decode_base64url(payload_b64)
+  #             if payload_json then
+  #               -- Parse JSON manually (sandbox hack)
+  #               local ok, payload = pcall(function()
+  #                 return assert(loadstring("return " .. payload_json:gsub('"%s*:', '"=')))()
+  #               end)
+  #               if ok and payload then
+  #                 -- Validate exp and iss
+  #                 if payload.exp and os.time() < payload.exp and payload.iss == "shared-key" then
+  #                   valid = true
+  #                   jwt_payload = payload
+  #                 end
+  #               end
+  #             end
+  #           end
+  #         end
+
+  #         if not valid then
+  #           local scheme = kong.request.get_scheme()
+  #           local host = kong.request.get_host()
+  #           local port = kong.request.get_port()
+  #           local path = kong.request.get_path()
+  #           local current_url = scheme .. "://" .. host
+  #           if port and port ~= 80 and port ~= 443 then
+  #             current_url = current_url .. ":" .. port
+  #           end
+  #           current_url = current_url .. path
+  #           local encoded_url = ngx.encode_base64(current_url)
+  #           kong.response.set_header("Set-Cookie",
+  #             "return_after_auth=" .. encoded_url ..
+  #             "; HttpOnly; Path=/; SameSite=Lax; Max-Age=300"
+  #           )
+  #           kong.log.notice("Auth required for /dashboard, redirecting to /auth. Will return to: " .. current_url)
+  #           return kong.response.exit(302, "", {
+  #             ["Location"] = "/auth"
+  #           })
+  #         else
+  #           kong.log.notice("Dashboard access granted to: " .. (jwt_payload.email or "unknown user"))
+  #         end
 
   # Token handler for root: set cookie from ?token=...
   - id: 11111111-aaaa-4aaa-bbbb-000000000008
@@ -514,16 +511,64 @@ plugins:
   #             ["Location"] = redirect_url
   #           })
   #         end
-  - id: 11111111-aaaa-4aaa-bbbb-000000000011
-    name: jwt
+  # - id: 11111111-aaaa-4aaa-bbbb-000000000012
+  #   name: pre-function
+  #   route: dashboard-route
+  #   tags:
+  #     - jwt-debug-dashboard
+  #   config:
+  #     access:
+  #       - |
+  #         kong.log.notice("=== JWT DEBUG FOR /dashboard ===")
+  #         local cookies = kong.request.get_headers()["cookie"] or ""
+  #         kong.log.notice("Cookies: " .. cookies)
+  #         local access_token = string.match(cookies, "access_token=([^;]+)")
+  #         if access_token then
+  #           kong.log.notice("Found access_token in cookie: " .. access_token:sub(1, 20) .. "...")
+  #           -- Decode JWT header and payload for debugging
+  #           local function decode_base64url(input)
+  #             input = input:gsub('-', '+'):gsub('_', '/')
+  #             local pad = #input % 4
+  #             if pad > 0 then input = input .. string.rep('=', 4 - pad) end
+  #             return ngx.decode_base64(input)
+  #           end
+  #           local header_b64, payload_b64 = access_token:match("([^.]+)%.([^.]+)%.")
+  #           if header_b64 and payload_b64 then
+  #             local header = decode_base64url(header_b64)
+  #             local payload = decode_base64url(payload_b64)
+  #             kong.log.notice("JWT header: " .. (header or "nil"))
+  #             kong.log.notice("JWT payload: " .. (payload or "nil"))
+  #           else
+  #             kong.log.notice("Could not parse JWT parts")
+  #           end
+  #         else
+  #           kong.log.notice("No access_token found in cookies")
+  #         end
+  #         local credential = kong.client.get_credential()
+  #         if credential then
+  #           kong.log.notice("JWT credential found! key: " .. (credential.key or "nil"))
+  #           for k, v in pairs(credential.payload or {}) do
+  #             kong.log.notice("JWT claim: " .. k .. " = " .. tostring(v))
+  #           end
+  #         else
+  #           kong.log.notice("No JWT credential found (token invalid or not present)")
+  #         end
+  #         kong.log.notice("=== END JWT DEBUG ===")
+
+  # - id: 11111111-aaaa-4aaa-bbbb-000000000011
+  #   name: jwt
+  #   route: dashboard-route
+  #   config:
+  #     cookie_names:
+  #       - access_token
+  #     key_claim_name: iss
+  #     claims_to_verify:
+  #       - exp
+  #     run_on_preflight: true
+  #     secret_is_base64: false
+  
+
+  - name: jwt-cookie-auth-redirect
     route: dashboard-route
-    config:
-      cookie_names:
-        - access_token
-      key_claim_name: iss
-      claims_to_verify:
-        - exp
-      run_on_preflight: true
-      secret_is_base64: false
 
 
