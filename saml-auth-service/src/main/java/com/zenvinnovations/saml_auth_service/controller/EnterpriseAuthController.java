@@ -48,60 +48,13 @@ public class EnterpriseAuthController {
         
         logger.info("Authentication request received for redirect_uri: {}", redirect_uri);
         
-        // Get existing session instead of always creating a new one
-        HttpSession session = request.getSession(false);
-        if (session == null) {
-            session = request.getSession(true);
-            logger.info("New session created: {}", session.getId());
-        } else {
-            logger.info("Using existing session: {}", session.getId());
+        // Just store state if needed, but rely on Kong for redirect
+        HttpSession session = request.getSession(true);
+        if (state != null && !state.isEmpty()) {
+            session.setAttribute("oauth_state", state);
         }
         
-        String decodedUri = null;
-        
-        if (redirect_uri != null && !redirect_uri.isEmpty()) {
-            try {
-                // Try to decode if it's base64
-                byte[] decodedBytes = Base64.getDecoder().decode(redirect_uri);
-                decodedUri = new String(decodedBytes);
-                logger.debug("Decoded redirect URI from Base64: {}", decodedUri);
-                
-                // Fix for http://localhost/ vs http://localhost:8000/
-                if (decodedUri.startsWith("http://localhost/")) {
-                    decodedUri = decodedUri.replace("http://localhost/", "http://localhost:8000/");
-                    logger.info("Fixed redirect URI to use correct port: {}", decodedUri);
-                }
-            } catch (IllegalArgumentException e) {
-                // If not base64, use as is
-                decodedUri = redirect_uri;
-                logger.debug("Using redirect URI as is (not Base64): {}", decodedUri);
-            }
-            
-            // Store in session
-            session.setAttribute("redirect_uri", decodedUri);
-            session.setAttribute("redirect_after_auth", decodedUri);
-            logger.info("Stored redirect_uri in session: {}", decodedUri);
-            
-            // Simplify cookie storage - use a single standardized cookie
-            Cookie redirectCookie = new Cookie("auth_redirect_uri", redirect_uri);
-            redirectCookie.setPath("/");
-            redirectCookie.setMaxAge(300); // 5 minutes
-            redirectCookie.setHttpOnly(true);
-            response.addCookie(redirectCookie);
-            
-            logger.debug("Stored redirect cookie: {}", redirect_uri);
-            
-            // If state was provided, store it too
-            if (state != null && !state.isEmpty()) {
-                session.setAttribute("oauth_state", state);
-                logger.debug("Stored OAuth state: {}", state);
-            }
-        } else {
-            logger.warn("No redirect_uri provided, using default");
-            session.setAttribute("redirect_uri", defaultRedirectUrl);
-            session.setAttribute("redirect_after_auth", defaultRedirectUrl);
-        }
-        
+        // Proceed to SAML authentication
         return new RedirectView("/saml2/authenticate/google-workspace");
     }
     

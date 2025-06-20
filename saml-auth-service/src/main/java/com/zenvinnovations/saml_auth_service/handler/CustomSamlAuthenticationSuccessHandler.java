@@ -109,122 +109,14 @@ public class CustomSamlAuthenticationSuccessHandler implements AuthenticationSuc
                                       Authentication authentication) throws IOException {
         logger.info("SAML authentication successful for user: {}", authentication.getName());
         
-        // Default redirect URL
-        String redirectUrl = findRedirectUrl(request);
-        
-        // 1. FIRST: Log ALL request details for debugging
-        logger.debug("Authentication success handler details:");
-        logger.debug("  Session ID: {}", request.getSession(false) != null ? request.getSession(false).getId() : "none");
-        logger.debug("  Request URI: {}", request.getRequestURI());
-        logger.debug("  Remote Host: {}", request.getRemoteHost());
-        
-        // 2. SECOND: Check all headers and cookies
-        logger.debug("Request headers:");
-        Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            logger.debug("  {}: {}", headerName, request.getHeader(headerName));
-        }
-        
-        // 3. Check cookies with improved logging
-        Cookie[] cookies = request.getCookies();
-        if (cookies != null) {
-            logger.debug("Found {} cookies:", cookies.length);
-            for (Cookie cookie : cookies) {
-                logger.debug("Cookie: {} = {}", cookie.getName(), cookie.getValue());
-                
-                // Look for our redirect cookies with ANY name that might contain it
-                if (cookie.getName().contains("redirect") || 
-                    cookie.getName().contains("return") || 
-                    cookie.getName().contains("auth")) {
-                    
-                    try {
-                        String encodedUrl = cookie.getValue();
-                        if (encodedUrl != null && !encodedUrl.isEmpty()) {
-                            logger.debug("Attempting to decode cookie: {}", cookie.getName());
-                            byte[] decodedBytes = Base64.getDecoder().decode(encodedUrl);
-                            String cookieRedirect = new String(decodedBytes);
-                            logger.info("Successfully decoded cookie value: {}", cookieRedirect);
-                            
-                            // Fix the URL with a more robust approach
-                            if (cookieRedirect.startsWith("http://localhost/")) {
-                                String pathPart = cookieRedirect.substring("http://localhost/".length());
-                                cookieRedirect = "http://localhost:8000/" + pathPart;
-                                logger.info("Fixed cookie redirect URL to use correct port: {}", cookieRedirect);
-                            }
-                            
-                            redirectUrl = cookieRedirect;
-                            logger.info("Using redirect URL from cookie {}: {}", cookie.getName(), redirectUrl);
-                            
-                            // Break after finding a valid cookie
-                            break;
-                        }
-                    } catch (Exception e) {
-                        logger.error("Error decoding cookie {}: {}", cookie.getName(), e.getMessage());
-                    }
-                }
-            }
-        } else {
-            logger.warn("No cookies found in the request!");
-        }
-        
-        // 4. Fallback to session if no cookies found
-        if (redirectUrl.equals(defaultRedirectUrl)) {
-            HttpSession session = request.getSession(false);
-            if (session != null) {
-                logger.debug("Checking session attributes in ID: {}", session.getId());
-                Enumeration<String> attributeNames = session.getAttributeNames();
-                while (attributeNames.hasMoreElements()) {
-                    String name = attributeNames.nextElement();
-                    Object value = session.getAttribute(name);
-                    logger.debug("  - {}: {}", name, value);
-                    
-                    // Check for any attribute that might contain a redirect URL
-                    if ((name.contains("redirect") || name.contains("return")) && 
-                        value instanceof String && 
-                        ((String)value).startsWith("http")) {
-                        
-                        redirectUrl = (String)value;
-                        logger.info("Using redirect URL from session attribute {}: {}", name, redirectUrl);
-                        break;
-                    }
-                }
-                
-                // Clean up session attributes
-                session.removeAttribute("redirect_uri");
-                session.removeAttribute("redirect_after_auth");
-            }
-        }
-        
         // Generate JWT token
         String token = jwtService.generateJwtToken(authentication);
         logger.info("Generated JWT token for user: {}", authentication.getName());
         
-        // Add cookie with the token for Kong to use
-        Cookie tokenCookie = new Cookie("access_token", token);
-        tokenCookie.setPath("/");
-        tokenCookie.setHttpOnly(true);
-        tokenCookie.setMaxAge(86400); // 1 day
-        response.addCookie(tokenCookie);
-        
         // Log successful authentication
         auditService.logSuccessfulAuthentication("kong", authentication.getName());
         
-        // Build final URL with token
-        StringBuilder finalUrl = new StringBuilder();
-        if (redirectUrl.contains("?")) {
-            finalUrl.append(redirectUrl).append("&token=").append(token);
-        } else {
-            finalUrl.append(redirectUrl).append("?token=").append(token);
-        }
-        
-        String logUrl = finalUrl.toString().replaceAll("token=.*?(&|$)", "token=REDACTED$1");
-        logger.info("Redirecting to: {}", logUrl);
-        
-        // Set a more specific response header to ensure proper redirect
-        response.setHeader("Cache-Control", "no-store");
-        
-        // Redirect to final URL with token
-        response.sendRedirect(finalUrl.toString());
+        // CHANGE THIS LINE to always redirect to Kong
+        response.sendRedirect("http://localhost:8000/?token=" + token);
     }
 }

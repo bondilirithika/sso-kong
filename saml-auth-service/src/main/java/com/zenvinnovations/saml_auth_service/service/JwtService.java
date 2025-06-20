@@ -9,11 +9,15 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticatedPrincipal;
 import org.springframework.stereotype.Service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 @Service
 public class JwtService {
+    private static final Logger logger = LoggerFactory.getLogger(JwtService.class);
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -38,10 +42,18 @@ public class JwtService {
     }
     
     public Claims validateToken(String token) {
-        return Jwts.parserBuilder()
-            .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
-            .build()
-            .parseClaimsJws(token)
-            .getBody();
+        logger.info("Validating JWT token: {}", token);
+        try {
+            Claims claims = Jwts.parserBuilder()
+                .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+            logger.info("JWT validated successfully. Claims: {}", claims);
+            return claims;
+        } catch (Exception e) {
+            logger.error("JWT validation failed: {}", e.getMessage(), e);
+            throw e;
+        }
     }
 }

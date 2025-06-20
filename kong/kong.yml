@@ -205,22 +205,73 @@ plugins:
               ["Location"] = "/auth?redirect_uri=" .. encoded_url
             })
           end
-
   # Protect /dashboard
   - id: 11111111-aaaa-4aaa-bbbb-000000000007
     name: pre-function
     route: dashboard-route
     tags:
       - protected-route-dashboard
+      - redirect-flow-manager
     config:
       access:
         - |
-          if kong.client.get_credential() == nil then
-            local current_url = kong.request.get_scheme() .. "://" .. kong.request.get_host() .. kong.request.get_path()
-            local encoded_url = ngx.encode_base64(current_url)
-            return kong.response.exit(302, "", {
-              ["Location"] = "https://9a96-122-171-174-91.ngrok-free.app/auth?redirect_uri=" .. encoded_url
+          -- Handle token in query (after auth)
+          local token = kong.request.get_query_arg("token")
+          if token then
+            kong.log.notice("REDIRECT FLOW MANAGER: Processing token")
+            kong.response.set_header("Set-Cookie",
+              "access_token=" .. token ..
+              "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400"
+            )
+            local cookies = kong.request.get_headers()["cookie"] or ""
+            local redirect_cookie = string.match(cookies, "return_after_auth=([^;]+)")
+            local redirect_url = "/"
+            if redirect_cookie then
+              local decoded_cookie = ngx.decode_base64(redirect_cookie)
+              if decoded_cookie then
+                if decoded_cookie:match("^http://localhost/") then
+                  decoded_cookie = decoded_cookie:gsub("http://localhost/", "http://localhost:8000/")
+                end
+                redirect_url = decoded_cookie
+                kong.response.add_header("Set-Cookie",
+                  "return_after_auth=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+                )
+              end
+            end
+            kong.log.notice("REDIRECT FLOW MANAGER: Redirecting to: " .. redirect_url)
+            return kong.response.exit(302, nil, {
+              ["Location"] = redirect_url
             })
+          end
+
+          -- Check for JWT credential
+          local jwt_credential = kong.client.get_credential()
+          local valid = false
+          if jwt_credential and jwt_credential.payload and jwt_credential.payload.email then
+            valid = true
+          end
+
+          if not valid then
+            local scheme = kong.request.get_scheme()
+            local host = kong.request.get_host()
+            local port = kong.request.get_port()
+            local path = kong.request.get_path()
+            local current_url = scheme .. "://" .. host
+            if port and port ~= 80 and port ~= 443 then
+              current_url = current_url .. ":" .. port
+            end
+            current_url = current_url .. path
+            local encoded_url = ngx.encode_base64(current_url)
+            kong.response.set_header("Set-Cookie",
+              "return_after_auth=" .. encoded_url ..
+              "; HttpOnly; Path=/; SameSite=Lax; Max-Age=300"
+            )
+            kong.log.notice("Auth required for /dashboard, redirecting to /auth. Will return to: " .. current_url)
+            return kong.response.exit(302, "", {
+              ["Location"] = "/auth"
+            })
+          else
+            kong.log.notice("Dashboard access granted to: " .. (jwt_credential.payload.email or "unknown user"))
           end
 
   # Token handler for root: set cookie from ?token=...
@@ -239,25 +290,21 @@ plugins:
               "access_token=" .. token ..
               "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400"
             )
-            
-            -- Strip the token from URL for security
-            local uri = kong.request.get_path()
-            local query_params = kong.request.get_query()
-            query_params["token"] = nil
-            
-            -- Rebuild the URL without the token
-            local redirect_url = uri
-            local first = true
-            for k, v in pairs(query_params) do
-              if first then
-                redirect_url = redirect_url .. "?"
-                first = false
-              else
-                redirect_url = redirect_url .. "&"
+
+            -- Get redirect URL from cookies
+            local cookies = kong.request.get_headers()["cookie"] or ""
+            local redirect_cookie = string.match(cookies, "return_after_auth=([^;]+)")
+            local redirect_url = "/"
+            if redirect_cookie then
+              local decoded_cookie = ngx.decode_base64(redirect_cookie)
+              if decoded_cookie then
+                redirect_url = decoded_cookie
+                kong.response.add_header("Set-Cookie",
+                  "return_after_auth=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+                )
               end
-              redirect_url = redirect_url .. k .. "=" .. v
             end
-            
+
             kong.log.notice("Redirecting to: " .. redirect_url)
             return kong.response.exit(302, nil, {
               ["Location"] = redirect_url
@@ -417,3 +464,66 @@ plugins:
               })
             end
           end
+  
+  # # Add this new plugin to manage redirect flow
+  # - id: 11111111-aaaa-4aaa-bbbb-00000000000E
+  #   name: pre-function
+  #   route: dashboard-route
+  #   tags:
+  #     - redirect-flow-manager
+  #   config:
+  #     access:
+  #       - |
+  #         -- Only run when we have a token parameter (after authentication)
+  #         local token = kong.request.get_query_arg("token")
+  #         if token then
+  #           kong.log.notice("REDIRECT FLOW MANAGER: Processing token")
+            
+  #           -- Set the token in a cookie
+  #           kong.response.set_header("Set-Cookie",
+  #             "access_token=" .. token ..
+  #             "; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400"
+  #           )
+            
+  #           -- Get redirect URL from cookies
+  #           local cookies = kong.request.get_headers()["cookie"] or ""
+  #           local redirect_cookie = string.match(cookies, "return_after_auth=([^;]+)")
+  #           local redirect_url = "/"
+  #           if redirect_cookie then
+  #             -- Try to decode the cookie value
+  #             local decoded_cookie = ngx.decode_base64(redirect_cookie)
+  #             if decoded_cookie then
+  #               -- Fix URLs that are missing port 8000
+  #               if decoded_cookie:match("^http://localhost/") then
+  #                 decoded_cookie = decoded_cookie:gsub("http://localhost/", "http://localhost:8000/")
+  #                 kong.log.notice("Fixed URL to include port 8000: " .. decoded_cookie)
+  #               end
+                
+  #               redirect_url = decoded_cookie
+  #               kong.log.notice("REDIRECT FLOW MANAGER: Using redirect URL from cookie: " .. redirect_url)
+                
+  #               -- Clear the redirect cookie
+  #               kong.response.add_header("Set-Cookie", 
+  #                 "return_after_auth=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+  #               )
+  #             end
+  #           end
+            
+  #           kong.log.notice("REDIRECT FLOW MANAGER: Redirecting to: " .. redirect_url)
+  #           return kong.response.exit(302, nil, {
+  #             ["Location"] = redirect_url
+  #           })
+  #         end
+  - id: 11111111-aaaa-4aaa-bbbb-000000000011
+    name: jwt
+    route: dashboard-route
+    config:
+      cookie_names:
+        - access_token
+      key_claim_name: iss
+      claims_to_verify:
+        - exp
+      run_on_preflight: true
+      secret_is_base64: false
+
+
