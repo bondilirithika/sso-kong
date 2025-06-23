@@ -24,6 +24,9 @@ services:
   - name: frontend-service
     url: http://host.docker.internal:3000
 
+  - name: second-app-service
+    url: http://host.docker.internal:3001  # Make sure this matches your second app's port
+
 # =====================
 # ROUTES
 # =====================
@@ -70,15 +73,6 @@ routes:
     strip_path: false
 # Do NOT add any JWT or auth plugins for root-route!
 
-  - name: logout-route
-    paths:
-      - /logout
-    strip_path: false
-    protocols:
-      - http
-      - https
-    service: null  # No backend service - Kong handles it entirely
-
 # =====================
 # PLUGINS
 # =====================
@@ -102,6 +96,7 @@ plugins:
     config:
       origins:
         - "http://localhost:3000"
+        - "http://localhost:3001"  # Add the second app's origin
         - "http://localhost:8000"
         - "https://9a96-122-171-174-91.ngrok-free.app"
       methods:
@@ -298,7 +293,6 @@ plugins:
       
   # JWT Cookie Auth Redirect for dashboard route
   - name: jwt-cookie-auth-redirect
-    route: dashboard-route 
-    tags:
-      - protected-routes-handler
+    route: dashboard-route
+
 
