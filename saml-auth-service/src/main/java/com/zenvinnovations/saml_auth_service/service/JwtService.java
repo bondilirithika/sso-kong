@@ -2,11 +2,9 @@ package com.zenvinnovations.saml_auth_service.service;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticatedPrincipal;
 import org.springframework.stereotype.Service;
 
 import org.slf4j.Logger;
@@ -29,7 +27,7 @@ public class JwtService {
         // Get user details
         String username = authentication.getName();
         
-        // Create JWT token
+        // Create JWT token with only necessary claims for Kong
         return Jwts.builder()
             .setSubject(username)
             .setIssuedAt(new Date())

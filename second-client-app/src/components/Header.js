@@ -11,7 +11,6 @@ const Header = () => {
   useEffect(() => {
     ApiService.getUserInfo()
       .then(userData => {
-        console.log("User data:", userData); // Debug
         setUser(userData);
         setLoading(false);
       })
@@ -21,28 +20,23 @@ const Header = () => {
       });
   }, []);
   
-  // Helper to create correct links with base path
-  const appLink = (path) => {
-    return `${ConfigService.getAppBasePath()}${path}`;
-  };
-  
   return (
     <nav className="navbar navbar-expand-lg navbar-dark bg-success">
       <div className="container">
-        <Link to={appLink('/')} className="navbar-brand">Second App</Link>
+        <Link to="/" className="navbar-brand">Second App</Link>
         
         <div className="collapse navbar-collapse">
           <ul className="navbar-nav me-auto">
             <li className="nav-item">
-              <Link to={appLink('/')} className="nav-link">Home</Link>
+              <Link to="/" className="nav-link">Home</Link>
             </li>
             {user && (
               <>
                 <li className="nav-item">
-                  <Link to={appLink('/dashboard')} className="nav-link">Dashboard</Link>
+                  <Link to="/dashboard" className="nav-link">Dashboard</Link>
                 </li>
                 <li className="nav-item">
-                  <Link to={appLink('/settings')} className="nav-link">Settings</Link>
+                  <Link to="/settings" className="nav-link">Settings</Link>
                 </li>
               </>
             )}
@@ -61,7 +55,6 @@ const Header = () => {
               >
                 Logout
               </a>
-              
             </div>
           ) : (
             <a 

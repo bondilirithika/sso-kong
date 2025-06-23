@@ -8,7 +8,6 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.saml2.core.Saml2X509Credential;
 import org.springframework.security.saml2.provider.service.authentication.OpenSaml4AuthenticationProvider;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
@@ -27,13 +26,6 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 
-import com.zenvinnovations.saml_auth_service.service.JwtService;
-
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.security.Keys;
-import java.util.Date;
-import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,8 +59,7 @@ public class SamlSecurityConfig {
     @Autowired
     private OpenSaml4AuthenticationProvider samlAuthenticationProvider;
     
-    @Autowired
-    private JwtService jwtService; // Add this
+ 
     
     @Autowired(required = false)
     private AuthenticationSuccessHandler customSamlAuthenticationSuccessHandler;
@@ -81,7 +72,7 @@ public class SamlSecurityConfig {
                 .anyRequest().authenticated()
             )
             .saml2Login(saml2 -> saml2
-                .loginPage("/auth") // This is important! Prevents default login page
+                .loginPage("/auth") 
                 .defaultSuccessUrl("/token", true)
                 .successHandler(customSamlAuthenticationSuccessHandler)
                 .authenticationManager(samlAuthenticationProvider::authenticate)
@@ -89,9 +80,7 @@ public class SamlSecurityConfig {
             )
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.ALWAYS)
-                .sessionFixation().migrateSession() // This preserves attributes while changing session ID
-                .maximumSessions(1)
-                .maxSessionsPreventsLogin(false)
+                .sessionFixation().migrateSession()
             )
             .logout(logout -> logout
                 .logoutRequestMatcher(new AntPathRequestMatcher("/logout"))
@@ -101,11 +90,8 @@ public class SamlSecurityConfig {
             )
             .csrf(csrf -> csrf
                 .ignoringRequestMatchers("/api/**", "/auth", "/token", "/logout")
-            )
-            .headers(headers -> headers
-                .frameOptions(frameOptions -> frameOptions.deny())
             );
-        
+    
         return http.build();
     }
     
