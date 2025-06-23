@@ -73,6 +73,39 @@ routes:
     strip_path: false
 # Do NOT add any JWT or auth plugins for root-route!
 
+  - name: logout-route
+    paths:
+      - /logout
+    strip_path: false
+    protocols:
+      - http
+      - https
+    service: null  # No backend service - Kong handles it entirely
+
+  # Routes for the second application
+  - name: second-app-root
+    service: second-app-service
+    paths:
+      - /app2
+      - /app2/
+    strip_path: true
+    
+  - name: second-app-dashboard
+    service: second-app-service
+    paths:
+      - /app2/dashboard
+    strip_path: true
+    tags:
+      - protected-route
+      
+  - name: second-app-settings
+    service: second-app-service
+    paths:
+      - /app2/settings
+    strip_path: true
+    tags:
+      - protected-route
+
 # =====================
 # PLUGINS
 # =====================
@@ -293,6 +326,14 @@ plugins:
       
   # JWT Cookie Auth Redirect for dashboard route
   - name: jwt-cookie-auth-redirect
-    route: dashboard-route
+    route: dashboard-route 
+    tags:
+      - protected-routes-handler
 
-
+  # JWT Cookie Auth for second app's protected routes
+  
+  - name: jwt-cookie-auth-redirect
+    route: second-app-dashboard
+      
+  - name: jwt-cookie-auth-redirect
+    route: second-app-settings
