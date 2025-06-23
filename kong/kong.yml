@@ -41,7 +41,6 @@ routes:
     paths:
       - /auth
       - /token
-      - /logout
       - /error
       - /saml2
       - /login
@@ -52,12 +51,16 @@ routes:
     paths:
       - /profile
     strip_path: false
+    tags:
+      - protected-route
 
   - name: dashboard-route
     service: frontend-service
     paths:
       - /dashboard
     strip_path: false
+    tags:
+      - protected-route
 
 
   - name: root-route
@@ -66,6 +69,15 @@ routes:
       - /
     strip_path: false
 # Do NOT add any JWT or auth plugins for root-route!
+
+  - name: logout-route
+    paths:
+      - /logout
+    strip_path: false
+    protocols:
+      - http
+      - https
+    service: null  # No backend service - Kong handles it entirely
 
 # =====================
 # PLUGINS
@@ -189,17 +201,31 @@ plugins:
   # Enhanced logout handler that captures referer automatically
   - id: 11111111-aaaa-4aaa-bbbb-00000000000B
     name: pre-function
-    route: auth-route
+    route: logout-route
     tags:
       - enhanced-logout-handler
     config:
       access:
         - |
-          -- Handle the logout path with extra logging
           local path = kong.request.get_path()
           
           if path == "/logout" then
             kong.log.notice("LOGOUT HANDLER ACTIVATED")
+            
+            -- Get the redirect parameter from query string
+            local redirect_to = kong.request.get_query_arg("redirect_to")
+            
+            -- Default to homepage if no redirect specified
+            if not redirect_to or redirect_to == "" then
+              redirect_to = "http://localhost:8000/"
+            end
+            
+            -- Make sure we're not redirecting to ngrok
+            if redirect_to:find("ngrok%-free%.app") then
+              redirect_to = "http://localhost:8000/"
+            end
+            
+            kong.log.notice("Logout redirecting to: " .. redirect_to)
             
             -- Clear cookies in all possible formats
             local cookie_clear_headers = {
@@ -208,45 +234,71 @@ plugins:
               "access_token=; Path=/api; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
               -- Domain variations 
               "access_token=; Path=/; Domain=localhost; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
+              "access_token=; Path=/; Domain=127.0.0.1; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
+              "access_token=; Path=/; Domain=9a96-122-171-174-91.ngrok-free.app; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
               -- JSESSIONID variations
               "JSESSIONID=; Path=/; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              "JSESSIONID=; Path=/; Domain=localhost; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
+              "JSESSIONID=; Path=/; Domain=localhost; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
+              "JSESSIONID=; Path=/; Domain=127.0.0.1; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
+              "JSESSIONID=; Path=/; Domain=9a96-122-171-174-91.ngrok-free.app; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
             }
             
-            -- Apply all cookie clearing headers immediately
-            for _, header in ipairs(cookie_clear_headers) do
-              kong.response.add_header("Set-Cookie", header)
-            end
-            
-            -- SKIP the backend entirely and force redirect to localhost:8000
-            -- This completely bypasses any redirect issues from the backend
+            -- IMPORTANT: Only use exit() ONCE with all headers
+            -- Don't set them separately and then again in exit()
             return kong.response.exit(302, nil, {
-              ["Location"] = "http://localhost:8000/",
+              ["Location"] = redirect_to,
               ["Set-Cookie"] = cookie_clear_headers
             })
           end
-  # # Add this new plugin for API userinfo endpoint
-  # - id: 11111111-aaaa-4aaa-bbbb-00000000000D
-  #   name: pre-function
-  #   route: api-route
-  #   tags:
-  #     - userinfo-handler
-  #   config:
-  #     access:
-  #       - |
-  #         -- Handle /api/userinfo requests to ensure they never redirect
-  #         if kong.request.get_path() == "/api/userinfo" then
-  #           -- If not authenticated, return 401 directly
-  #           if kong.client.get_credential() == nil then
-  #             return kong.response.exit(401, {
-  #               authenticated = false,
-  #               message = "Authentication required for API access"
-  #             })
-  #           end
-  #         end
- 
-  - name: jwt-cookie-auth-redirect
-    route: dashboard-route
+
+  # Login referer capture handler
+  - id: 11111111-aaaa-4aaa-bbbb-00000000000C
+    name: pre-function
+    route: auth-route
+    tags:
+      - login-referer-handler
+    config:
+      access:
+        - |
+          -- Only handle the auth path
+          if kong.request.get_path() == "/auth" then
+            kong.log.notice("LOGIN HANDLER ACTIVATED")
+            
+            -- Check if a redirect_uri parameter was explicitly provided
+            local redirect_uri = kong.request.get_query_arg("redirect_uri")
+            
+            -- If no explicit redirect_uri, check for existing return_after_auth cookie
+            if not redirect_uri or redirect_uri == "" then
+              local cookies = kong.request.get_headers()["cookie"] or ""
+              local return_cookie = string.match(cookies, "return_after_auth=([^;]+)")
+              
+              -- If no return_after_auth cookie either, use the referer header
+              if not return_cookie or return_cookie == "" then
+                local referer = kong.request.get_header("referer")
+                
+                if referer and referer ~= "" then
+                  kong.log.notice("Storing referer as return URL: " .. referer)
+                  
+                  -- Store the referer in a cookie for after authentication
+                  local encoded_referer = ngx.encode_base64(referer)
+                  kong.response.set_header("Set-Cookie",
+                    "return_after_auth=" .. encoded_referer ..
+                    "; HttpOnly; Path=/; SameSite=Lax; Max-Age=300"
+                  )
+                end
+              end
+            end
+          end
+
+  # JWT Cookie Auth Redirect for profile route
   - name: jwt-cookie-auth-redirect
     route: profile-route
+    tags:
+      - protected-routes-handler
+      
+  # JWT Cookie Auth Redirect for dashboard route
+  - name: jwt-cookie-auth-redirect
+    route: dashboard-route 
+    tags:
+      - protected-routes-handler
 

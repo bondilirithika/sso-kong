@@ -40,7 +40,7 @@ const Profile = () => {
         <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
           <h3 className="mb-0">User Profile</h3>
           <a 
-            href={`${ConfigService.getApiBaseUrl()}/logout`}
+            href={`${ConfigService.getApiBaseUrl()}/logout?redirect_to=${encodeURIComponent(window.location.origin + "/")}`}
             className="btn btn-sm btn-light"
           >
             Logout
