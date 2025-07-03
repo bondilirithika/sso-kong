@@ -68,7 +68,7 @@ public class SamlSecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers("/saml/**", "/api/token/validate", "/api/userinfo", "/auth", "/error", "/logout", "/token", "/login/error").permitAll()
+                .requestMatchers("/saml/**", "/api/token/validate", "/api/userinfo", "/auth", "/error", "/custom-logout", "/token", "/login/error").permitAll()
                 .anyRequest().authenticated()
             )
             .saml2Login(saml2 -> saml2
@@ -76,7 +76,7 @@ public class SamlSecurityConfig {
                 .defaultSuccessUrl("/token", true)
                 .successHandler(customSamlAuthenticationSuccessHandler)
                 .authenticationManager(samlAuthenticationProvider::authenticate)
-                .loginProcessingUrl("/login/saml2/sso/google-workspace")
+                .loginProcessingUrl("/login/saml2/sso/google")
             )
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.ALWAYS)
@@ -101,7 +101,7 @@ public class SamlSecurityConfig {
         
         // Create a basic RelyingPartyRegistration
         RelyingPartyRegistration registration = RelyingPartyRegistration
-            .withRegistrationId("google-workspace")
+            .withRegistrationId("google")
             .entityId(entityId)
             .assertionConsumerServiceLocation(acsUrl)
             .assertingPartyDetails(party -> party

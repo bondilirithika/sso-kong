@@ -50,7 +50,7 @@ const Header = () => {
             <div className="d-flex">
               <span className="navbar-text me-3">{user.email}</span>
               <a 
-                href={`${ConfigService.getApiBaseUrl()}/logout?redirect_to=${encodeURIComponent("http://localhost:8000/app2")}`}
+                href={`${ConfigService.getApiBaseUrl()}/custom-logout?redirect_to=${encodeURIComponent("http://localhost:8000/app2")}`}
                 className="btn btn-outline-light btn-sm"
               >
                 Logout

@@ -16,10 +16,10 @@ consumers:
 # =====================
 services:
   - name: backend-api
-    url: https://9a96-122-171-174-91.ngrok-free.app
+    url: https://overseas-juice-helping-dividend.trycloudflare.com  # CHANGE THIS
 
   - name: auth-service
-    url: https://9a96-122-171-174-91.ngrok-free.app
+    url: https://overseas-juice-helping-dividend.trycloudflare.com  # CHANGE THIS
 
   - name: frontend-service
     url: http://host.docker.internal:3000
@@ -65,7 +65,21 @@ routes:
     tags:
       - protected-route
 
-
+  - name: logout-route
+    service: auth-service
+    paths:
+      - /custom-logout
+    strip_path: false
+    plugins:
+      - name: pre-function
+        config:
+          access:
+            - |
+              -- This plugin ensures the logout route is ALWAYS public.
+              -- It prevents any other auth plugin from running on this route.
+              kong.log.notice("LOGOUT-ROUTE: Explicitly allowing public access to /custom-logout.")
+              return
+  
   - name: root-route
     service: frontend-service
     paths:
@@ -73,14 +87,7 @@ routes:
     strip_path: false
 # Do NOT add any JWT or auth plugins for root-route!
 
-  - name: logout-route
-    paths:
-      - /logout
-    strip_path: false
-    protocols:
-      - http
-      - https
-    service: null  # No backend service - Kong handles it entirely
+
 
   # Routes for the second application
   - name: second-app-root
@@ -105,6 +112,30 @@ routes:
     strip_path: true
     tags:
       - protected-route
+
+  - name: kong-clear-cookies-route
+    paths:
+      - /kong-clear-cookies
+    strip_path: false
+    service: null  # Kong handles this entirely
+    plugins:
+      - name: pre-function
+        config:
+          access:
+            - |
+              local redirect_to = kong.request.get_query_arg("redirect_to") or "http://localhost:8000"
+
+              -- Clear cookies
+              local cookie_clear_headers = {
+                "access_token=; Path=/; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure",
+                "JSESSIONID=; Path=/; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure"
+              }
+
+              -- Redirect user
+              return kong.response.exit(302, nil, {
+                ["Location"] = redirect_to,
+                ["Set-Cookie"] = cookie_clear_headers
+              })
 
 # =====================
 # PLUGINS
@@ -131,7 +162,7 @@ plugins:
         - "http://localhost:3000"
         - "http://localhost:3001"  # Add the second app's origin
         - "http://localhost:8000"
-        - "https://9a96-122-171-174-91.ngrok-free.app"
+        - "https://overseas-juice-helping-dividend.trycloudflare.com"
       methods:
         - GET
         - POST
@@ -226,60 +257,7 @@ plugins:
           end
  
 
-  # Enhanced logout handler that captures referer automatically
-  - id: 11111111-aaaa-4aaa-bbbb-00000000000B
-    name: pre-function
-    route: logout-route
-    tags:
-      - enhanced-logout-handler
-    config:
-      access:
-        - |
-          local path = kong.request.get_path()
-          
-          if path == "/logout" then
-            kong.log.notice("LOGOUT HANDLER ACTIVATED")
-            
-            -- Get the redirect parameter from query string
-            local redirect_to = kong.request.get_query_arg("redirect_to")
-            
-            -- Default to homepage if no redirect specified
-            if not redirect_to or redirect_to == "" then
-              redirect_to = "http://localhost:8000/"
-            end
-            
-            -- Make sure we're not redirecting to ngrok
-            if redirect_to:find("ngrok%-free%.app") then
-              redirect_to = "http://localhost:8000/"
-            end
-            
-            kong.log.notice("Logout redirecting to: " .. redirect_to)
-            
-            -- Clear cookies in all possible formats
-            local cookie_clear_headers = {
-              -- Path variations
-              "access_token=; Path=/; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              "access_token=; Path=/api; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              -- Domain variations 
-              "access_token=; Path=/; Domain=localhost; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              "access_token=; Path=/; Domain=127.0.0.1; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              "access_token=; Path=/; Domain=9a96-122-171-174-91.ngrok-free.app; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              -- JSESSIONID variations
-              "JSESSIONID=; Path=/; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              "JSESSIONID=; Path=/; Domain=localhost; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              "JSESSIONID=; Path=/; Domain=127.0.0.1; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax",
-              "JSESSIONID=; Path=/; Domain=9a96-122-171-174-91.ngrok-free.app; HttpOnly; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
-            }
-            
-            -- IMPORTANT: Only use exit() ONCE with all headers
-            -- Don't set them separately and then again in exit()
-            return kong.response.exit(302, nil, {
-              ["Location"] = redirect_to,
-              ["Set-Cookie"] = cookie_clear_headers
-            })
-          end
 
-  # Login referer capture handler
   - id: 11111111-aaaa-4aaa-bbbb-00000000000C
     name: pre-function
     route: auth-route

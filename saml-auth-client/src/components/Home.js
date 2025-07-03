@@ -52,7 +52,7 @@ const Home = () => {
                   Dashboard
                 </Link>
                 <a 
-                  href={`${ConfigService.getApiBaseUrl()}/logout?redirect_to=${encodeURIComponent(window.location.origin)}`}
+                  href={`${ConfigService.getApiBaseUrl()}/custom-logout?redirect_to=${encodeURIComponent(window.location.origin)}`}
                   className="btn btn-outline-danger"
                 >
                   Logout

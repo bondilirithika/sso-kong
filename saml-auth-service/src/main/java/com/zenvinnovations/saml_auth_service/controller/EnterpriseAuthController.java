@@ -39,7 +39,7 @@ public class EnterpriseAuthController {
         }
         
         // Proceed to SAML authentication
-        return new RedirectView("/saml2/authenticate/google-workspace");
+        return new RedirectView("/saml2/authenticate/google");
     }
     
     // This method is not used since Kong handles redirect validation

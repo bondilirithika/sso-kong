@@ -17,6 +17,8 @@ import org.springframework.web.servlet.view.RedirectView;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.Map;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,11 +63,14 @@ public class AuthController {
         return new RedirectView(redirectUrl);
     }
 
-    @RequestMapping(value = "/logout", method = {RequestMethod.POST, RequestMethod.GET})
-    public ResponseEntity<?> logout(HttpServletRequest request) {
-        logger.info("Logout request received, handled by Kong");
-        
-        // Simplified - just invalidate the session
+    @RequestMapping(value = "/custom-logout", method = {RequestMethod.POST, RequestMethod.GET})
+    public RedirectView logout(HttpServletRequest request) {
+        logger.info("======= LOGOUT REQUEST RECEIVED =======");
+        logger.info("Request URL: {}", request.getRequestURL());
+        logger.info("Query string: {}", request.getQueryString());
+        logger.info("Headers: {}", Collections.list(request.getHeaderNames()).stream()
+            .collect(Collectors.toMap(h -> h, request::getHeader)));
+
         HttpSession session = request.getSession(false);
         if (session != null) {
             try {
@@ -74,13 +79,24 @@ public class AuthController {
             } catch (Exception e) {
                 logger.error("Error invalidating session", e);
             }
+        } else {
+            logger.info("No session found to invalidate");
         }
+
+        // Redirect to Kong-specific endpoint to clear cookies
+        String redirectTo = request.getParameter("redirect_to");
+        if (redirectTo == null || redirectTo.isEmpty()) {
+            redirectTo = defaultRedirectUrl;
+            logger.info("Using default redirect URL: {}", redirectTo);
+        } else {
+            logger.info("Using provided redirect URL: {}", redirectTo);
+        }
+
+        // Use ABSOLUTE URL to Kong's cookie clearing endpoint
+        String targetUrl = "http://localhost:8000/kong-clear-cookies?redirect_to=" + redirectTo;
+        logger.info("Redirecting to: {}", targetUrl);
         
-        // Return simple success response - Kong handles the redirect and cookie clearing
-        return ResponseEntity.ok(Map.of(
-            "status", "success",
-            "message", "Session invalidated"
-        ));
+        return new RedirectView(targetUrl);
     }
     
     @GetMapping("/login/error")
